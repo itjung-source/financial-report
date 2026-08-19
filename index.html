@@ -235,6 +235,7 @@ function renderTtmChart(symbol, records, start) {
 let lastPivotRecords = null;
 let lastPivotSymbol = null;
 let pivotMetric = 'eps';
+let showYoyQoq = false;
 function renderPivot(symbol, records) {
   if (records) { lastPivotRecords = records; lastPivotSymbol = symbol; }
   records = lastPivotRecords; symbol = lastPivotSymbol;
@@ -253,28 +254,39 @@ function renderPivot(symbol, records) {
 
   const isEps = pivotMetric === 'eps';
   const title = isEps ? 'EPS' : 'กำไรสุทธิ (ล้านบาท)';
+  const decimals = isEps ? 3 : 1;
 
   let html = `<div class="pivot-head">` +
     `<h2 class="subhead">${symbol} — ${title} รายไตรมาส (ปี × ไตรมาส)</h2>` +
     `<select class="metric-select" onchange="pivotMetric=this.value; renderPivot(null);">` +
     `<option value="eps"${isEps ? ' selected' : ''}>EPS</option>` +
     `<option value="net_profit"${isEps ? '' : ' selected'}>กำไรสุทธิ (ล้านบาท)</option>` +
-    `</select></div>`;
+    `</select>` +
+    `<label style="font-size:13px; color:var(--muted); display:flex; align-items:center; gap:5px; cursor:pointer;">` +
+    `<input type="checkbox" ${showYoyQoq ? 'checked' : ''} onchange="showYoyQoq=this.checked; renderPivot(null);"> แสดง YoY/QoQ` +
+    `</label></div>`;
 
   html += '<table class="pivot"><thead><tr><th>ปี</th>';
-  for (const qn of [1, 2, 3, 4]) html += `<th>Q${qn}</th><th>YoY</th><th>QoQ</th>`;
-  html += '</tr></thead><tbody>';
+  for (const qn of [1, 2, 3, 4]) {
+    html += `<th>Q${qn}</th>`;
+    if (showYoyQoq) html += `<th>YoY</th><th>QoQ</th>`;
+  }
+  html += '<th>รวมทั้งปี</th></tr></thead><tbody>';
 
   for (const y of yearList) {
     html += `<tr><td>${y}</td>`;
+    let total = null;
     for (const q of [1, 2, 3, 4]) {
       const r = years[y][q];
-      if (isEps) {
-        html += fmt(r ? r.eps : null, 3) + fmtPct(r ? r.eps_yoy : null) + fmtPct(r ? r.eps_qoq : null);
-      } else {
-        html += fmt(r ? m(r.net_profit) : null, 1) + fmtPct(r ? r.np_yoy : null) + fmtPct(r ? r.np_qoq : null);
+      const val = r ? (isEps ? r.eps : m(r.net_profit)) : null;
+      if (val !== null && val !== undefined) total = (total ?? 0) + val;
+      html += fmt(val, decimals);
+      if (showYoyQoq) {
+        html += isEps ? (fmtPct(r ? r.eps_yoy : null) + fmtPct(r ? r.eps_qoq : null))
+                      : (fmtPct(r ? r.np_yoy : null) + fmtPct(r ? r.np_qoq : null));
       }
     }
+    html += fmt(total, decimals);
     html += '</tr>';
   }
   html += '</tbody></table>';
