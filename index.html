@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<title>งบกำไรขาดทุนรายไตรมาส</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --border: #2a2f3a; --text: #e6e8eb;
+    --muted: #9aa4b2; --accent: #4f8cff; --pos: #33c37a; --neg: #ff5c5c;
+    --eps-col: #262c38; --row-alt: #262c38;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", "Sarabun", sans-serif;
+    background: var(--bg); color: var(--text); padding: 24px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 16px; }
+  .search-row { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+  input[type=text] {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 14px; border-radius: 8px; font-size: 15px; width: 160px;
+    text-transform: uppercase;
+  }
+  input[type=date] {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 9px 10px; border-radius: 8px; font-size: 14px;
+  }
+  button {
+    background: var(--accent); color: white; border: none; padding: 10px 18px;
+    border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { opacity: 0.9; }
+  .label { font-size: 13px; color: var(--muted); align-self: center; }
+  #status { color: var(--muted); font-size: 14px; margin-bottom: 12px; min-height: 20px; }
+  #status.error { color: var(--neg); }
+  table {
+    border-collapse: collapse; width: 100%; background: var(--panel);
+    border-radius: 10px; overflow: hidden; font-size: 14px;
+  }
+  th, td { padding: 10px 12px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  th { background: #1e222c; color: var(--muted); font-weight: 600; font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  td.pos { color: var(--pos); }
+  td.neg { color: var(--neg); }
+  td.na { color: var(--muted); }
+  .prelim-badge {
+    display: inline-block; font-size: 10px; background: #493a12; color: #ffcf6b;
+    padding: 1px 6px; border-radius: 4px; margin-left: 6px; vertical-align: middle;
+  }
+  .note { color: var(--muted); font-size: 12.5px; margin-top: 12px; line-height: 1.6; }
+  .wrap { overflow-x: auto; margin-bottom: 24px; }
+  .subhead { font-size: 14px; font-weight: 600; color: var(--muted); margin: 0; }
+  .pivot-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
+  .metric-select {
+    background: var(--panel); border: 1px solid var(--border); color: var(--text);
+    padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
+  }
+  table.pivot th, table.pivot td { padding: 8px 10px; }
+  table.pivot th:nth-child(2), table.pivot td:nth-child(2),
+  table.pivot th:nth-child(5), table.pivot td:nth-child(5),
+  table.pivot th:nth-child(8), table.pivot td:nth-child(8),
+  table.pivot th:nth-child(11), table.pivot td:nth-child(11) { background: var(--eps-col); }
+  table.main tbody tr:nth-child(even) { background: var(--row-alt); }
+
+  #loginScreen {
+    min-height: 80vh; display: flex; align-items: center; justify-content: center;
+  }
+  .box { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 32px; width: 320px; }
+  .box h1 { text-align: center; }
+  .box label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 6px; }
+  .box input { width: 100%; background: #0f1115; border: 1px solid var(--border); color: var(--text);
+    padding: 10px 12px; border-radius: 8px; font-size: 15px; margin-bottom: 16px; }
+  .box button { width: 100%; }
+  .loginError { color: var(--neg); font-size: 13px; margin: -8px 0 16px; min-height: 16px; }
+  #appScreen { display: none; }
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <form class="box" id="loginForm">
+    <h1>📊 เข้าสู่ระบบ</h1>
+    <label for="username">Username</label>
+    <input type="text" id="username" autofocus required>
+    <label for="password">Password</label>
+    <input type="password" id="password" required>
+    <div class="loginError" id="loginError"></div>
+    <button type="submit">เข้าสู่ระบบ</button>
+  </form>
+</div>
+
+<div id="appScreen">
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+    <h1>📊 งบกำไรขาดทุนรายไตรมาส</h1>
+    <div style="font-size:13px; color:var(--muted);">
+      เข้าสู่ระบบเป็น <strong id="whoAmI"></strong> &nbsp;·&nbsp;
+      <a href="#" id="logoutLink" style="color:var(--accent);">ออกจากระบบ</a>
+    </div>
+  </div>
+  <div class="search-row">
+    <input type="text" id="symbol" placeholder="เช่น TOA, KTC, SSP">
+    <span class="label">ตั้งแต่</span>
+    <input type="date" id="start" value="2020-01-01">
+    <button onclick="load()">แสดงงบ</button>
+  </div>
+  <div id="status"></div>
+  <div class="wrap" id="chartWrap" style="display:none">
+    <h2 class="subhead" id="chartTitle"></h2>
+    <div style="position: relative; width: 100%; height: 260px; background: var(--panel); border-radius: 10px; padding: 14px 18px 6px;">
+      <canvas id="ttmChart" role="img" aria-label="กราฟเส้น EPS สะสม 4 ไตรมาสล่าสุดรายไตรมาส"></canvas>
+    </div>
+  </div>
+  <div class="wrap"><div id="pivot"></div></div>
+  <div class="wrap"><div id="result"></div></div>
+  <div class="note" id="note" style="display:none">
+    หมายเหตุ: <span class="prelim-badge">F45</span> = ข้อมูลเบื้องต้นจากข่าว F45 (มีแค่กำไรสุทธิ/EPS ยังไม่มีรายได้/GPM เต็ม)
+    &nbsp;|&nbsp; QoQ%/YoY% ของตารางล่าง คือของกำไรสุทธิ, QoQ%/YoY% ของตาราง EPS ด้านบน คือของ EPS
+    &nbsp;|&nbsp; กราฟบนสุด = EPS สะสมย้อนหลัง 4 ไตรมาส (TTM)
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+/*
+  หน้านี้เป็น static site (GitHub Pages) ไม่มี backend เซิร์ฟเวอร์
+  login ด้านล่างเป็นแค่ "ประตูกันคนทั่วไป" (cosmetic gate) เท่านั้น
+  ไม่ใช่การป้องกันความปลอดภัยจริง เพราะไฟล์ข้อมูล data/*.json
+  ดึงตรงจาก URL ได้อยู่แล้วโดยไม่ต้อง login ผ่านหน้านี้
+*/
+const VALID_USERS = ["it", "wut", "hong"];
+const VALID_PASSWORD = "evtrader";
+
+function checkLoggedIn() {
+  const user = sessionStorage.getItem("fr_user");
+  if (user && VALID_USERS.includes(user)) {
+    document.getElementById("loginScreen").style.display = "none";
+    document.getElementById("appScreen").style.display = "block";
+    document.getElementById("whoAmI").textContent = user;
+  } else {
+    document.getElementById("loginScreen").style.display = "flex";
+    document.getElementById("appScreen").style.display = "none";
+  }
+}
+
+document.getElementById("loginForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const u = document.getElementById("username").value.trim().toLowerCase();
+  const p = document.getElementById("password").value.trim().toLowerCase();
+  if (VALID_USERS.includes(u) && p === VALID_PASSWORD) {
+    sessionStorage.setItem("fr_user", u);
+    document.getElementById("loginError").textContent = "";
+    checkLoggedIn();
+  } else {
+    document.getElementById("loginError").textContent = "username หรือ password ไม่ถูกต้อง";
+  }
+});
+
+document.getElementById("logoutLink").addEventListener("click", (e) => {
+  e.preventDefault();
+  sessionStorage.removeItem("fr_user");
+  checkLoggedIn();
+});
+
+checkLoggedIn();
+
+function quarterLabel(periodEnd) {
+  const [y, m] = periodEnd.split("-");
+  const q = Math.floor((parseInt(m) - 1) / 3) + 1;
+  return `${y}Q${q}`;
+}
+
+function fmt(v, decimals) {
+  if (v === null || v === undefined) return '<td class="na">—</td>';
+  const cls = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+  return `<td class="${cls}">${v.toLocaleString('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals})}</td>`;
+}
+function fmtPct(v) {
+  if (v === null || v === undefined) return '<td class="na">—</td>';
+  const cls = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
+  const sign = v > 0 ? '+' : '';
+  return `<td class="${cls}">${sign}${v.toFixed(1)}%</td>`;
+}
+function m(v) { return v === null || v === undefined ? null : v / 1e6; }
+
+let ttmChartInstance = null;
+function renderTtmChart(symbol, records, start) {
+  const chartWrap = document.getElementById('chartWrap');
+  const points = [];
+  for (let i = 3; i < records.length; i++) {
+    if (records[i].period_end < start) continue;
+    const window = records.slice(i - 3, i + 1);
+    const ttm = window.reduce((s, r) => s + (r.eps || 0), 0);
+    points.push({ quarter: quarterLabel(records[i].period_end), ttm_eps: Math.round(ttm * 10000) / 10000 });
+  }
+  if (!points.length) { chartWrap.style.display = 'none'; return; }
+
+  chartWrap.style.display = 'block';
+  document.getElementById('chartTitle').textContent = `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส (บาท)`;
+
+  const labels = points.map(p => p.quarter);
+  const values = points.map(p => p.ttm_eps);
+  if (ttmChartInstance) ttmChartInstance.destroy();
+
+  const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const lineColor = isDark ? '#3987e5' : '#2a78d6';
+  ttmChartInstance = new Chart(document.getElementById('ttmChart'), {
+    type: 'line',
+    data: { labels, datasets: [{
+      label: 'EPS สะสม 4 ไตรมาส', data: values, borderColor: lineColor,
+      backgroundColor: lineColor + '1a', borderWidth: 2, pointRadius: 0,
+      pointHoverRadius: 5, pointHoverBackgroundColor: lineColor, fill: true, tension: 0.15,
+    }]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (ctx) => 'EPS สะสม 4 ไตรมาส: ' + ctx.parsed.y.toFixed(3) + ' บาท' } }
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+          ticks: labels.length <= 24
+            ? { color: '#9aa4b2', maxRotation: 60, minRotation: 60, autoSkip: false }
+            : { color: '#9aa4b2', maxRotation: 60, minRotation: 60, autoSkip: true, maxTicksLimit: 18 }
+        },
+        y: { grid: { color: '#2a2f3a' }, ticks: { color: '#9aa4b2', callback: (v) => v.toFixed(2) } }
+      }
+    }
+  });
+}
+
+let lastPivotRecords = null;
+let lastPivotSymbol = null;
+let pivotMetric = 'eps';
+function renderPivot(symbol, records) {
+  if (records) { lastPivotRecords = records; lastPivotSymbol = symbol; }
+  records = lastPivotRecords; symbol = lastPivotSymbol;
+  const pivot = document.getElementById('pivot');
+  if (!records || !records.length) { pivot.innerHTML = ''; return; }
+
+  const years = {};
+  for (const r of records) {
+    const [y, mo] = r.period_end.split("-");
+    const q = Math.floor((parseInt(mo) - 1) / 3) + 1;
+    const yy = parseInt(y);
+    years[yy] = years[yy] || {};
+    years[yy][q] = r;
+  }
+  const yearList = Object.keys(years).map(Number).sort((a, b) => b - a);
+
+  const isEps = pivotMetric === 'eps';
+  const title = isEps ? 'EPS' : 'กำไรสุทธิ (ล้านบาท)';
+
+  let html = `<div class="pivot-head">` +
+    `<h2 class="subhead">${symbol} — ${title} รายไตรมาส (ปี × ไตรมาส)</h2>` +
+    `<select class="metric-select" onchange="pivotMetric=this.value; renderPivot(null);">` +
+    `<option value="eps"${isEps ? ' selected' : ''}>EPS</option>` +
+    `<option value="net_profit"${isEps ? '' : ' selected'}>กำไรสุทธิ (ล้านบาท)</option>` +
+    `</select></div>`;
+
+  html += '<table class="pivot"><thead><tr><th>ปี</th>';
+  for (const qn of [1, 2, 3, 4]) html += `<th>Q${qn}</th><th>YoY</th><th>QoQ</th>`;
+  html += '</tr></thead><tbody>';
+
+  for (const y of yearList) {
+    html += `<tr><td>${y}</td>`;
+    for (const q of [1, 2, 3, 4]) {
+      const r = years[y][q];
+      if (isEps) {
+        html += fmt(r ? r.eps : null, 3) + fmtPct(r ? r.eps_yoy : null) + fmtPct(r ? r.eps_qoq : null);
+      } else {
+        html += fmt(r ? m(r.net_profit) : null, 1) + fmtPct(r ? r.np_yoy : null) + fmtPct(r ? r.np_qoq : null);
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table>';
+  pivot.innerHTML = html;
+}
+
+async function load() {
+  const symbol = document.getElementById('symbol').value.trim().toUpperCase();
+  const start = document.getElementById('start').value || '2020-01-01';
+  const status = document.getElementById('status');
+  const result = document.getElementById('result');
+  const pivot = document.getElementById('pivot');
+  const note = document.getElementById('note');
+  const chartWrap = document.getElementById('chartWrap');
+  status.className = ''; result.innerHTML = ''; pivot.innerHTML = ''; note.style.display = 'none';
+  chartWrap.style.display = 'none';
+
+  if (!symbol) { status.textContent = 'ใส่ชื่อหุ้นก่อนครับ'; status.className = 'error'; return; }
+  status.textContent = 'กำลังโหลด...';
+
+  try {
+    const res = await fetch(`data/s_${symbol}.json`, { cache: 'no-store' });
+    if (!res.ok) { status.textContent = `ไม่พบหุ้น ${symbol}`; status.className = 'error'; return; }
+    const allRecords = await res.json();
+    const records = allRecords.filter(r => r.period_end >= start);
+    if (!records.length) { status.textContent = `ไม่มีข้อมูลของ ${symbol} ตั้งแต่ ${start}`; status.className = 'error'; return; }
+
+    status.textContent = `${symbol} — ${records.length} ไตรมาส (หน่วยล้านบาท ยกเว้น % และ EPS)`;
+
+    renderTtmChart(symbol, allRecords, start);
+    renderPivot(symbol, allRecords.filter(r => r.period_end >= start));
+
+    let html = `<h2 class="subhead">${symbol} — งบกำไรขาดทุนรายไตรมาส</h2>`;
+    html += '<table class="main"><thead><tr>' +
+      '<th>ไตรมาส</th><th>รายได้</th><th>กำไรขั้นต้น</th><th>SG&A</th>' +
+      '<th>GPM%</th><th>NPM%</th><th>กำไรสุทธิ</th><th>EPS</th><th>QoQ%</th><th>YoY%</th>' +
+      '</tr></thead><tbody>';
+
+    const quartersDesc = [...records].reverse();
+    for (const r of quartersDesc) {
+      const preliminary = r.revenue === null && r.net_profit !== null;
+      const badge = preliminary ? '<span class="prelim-badge">F45</span>' : '';
+      html += '<tr>' +
+        `<td>${quarterLabel(r.period_end)}${badge}</td>` +
+        fmt(m(r.revenue), 1) +
+        fmt(m(r.gross_profit), 1) +
+        fmt(m(r.sga), 1) +
+        fmtPct(r.gpm) +
+        fmtPct(r.npm) +
+        fmt(m(r.net_profit), 1) +
+        fmt(r.eps, 3) +
+        fmtPct(r.np_qoq) +
+        fmtPct(r.np_yoy) +
+        '</tr>';
+    }
+    html += '</tbody></table>';
+    result.innerHTML = html;
+    note.style.display = 'block';
+  } catch (e) {
+    status.textContent = 'โหลดข้อมูลไม่สำเร็จ: ' + e;
+    status.className = 'error';
+  }
+}
+
+document.getElementById('symbol').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+</script>
+</body>
+</html>
