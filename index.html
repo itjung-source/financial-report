@@ -58,10 +58,7 @@
     padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
   }
   table.pivot th, table.pivot td { padding: 8px 10px; }
-  table.pivot th:nth-child(2), table.pivot td:nth-child(2),
-  table.pivot th:nth-child(5), table.pivot td:nth-child(5),
-  table.pivot th:nth-child(8), table.pivot td:nth-child(8),
-  table.pivot th:nth-child(11), table.pivot td:nth-child(11) { background: var(--eps-col); }
+  table.pivot th.q-col, table.pivot td.q-col { background: var(--eps-col); }
   table.main tbody tr:nth-child(even) { background: var(--row-alt); }
 
   #loginScreen {
@@ -108,7 +105,7 @@
   <div id="status"></div>
   <div class="wrap" id="chartWrap" style="display:none">
     <h2 class="subhead" id="chartTitle"></h2>
-    <div style="position: relative; width: 100%; height: 260px; background: var(--panel); border-radius: 10px; padding: 14px 18px 6px;">
+    <div style="position: relative; width: 100%; height: 520px; background: var(--panel); border-radius: 10px; padding: 14px 18px 6px;">
       <canvas id="ttmChart" role="img" aria-label="กราฟเส้น EPS สะสม 4 ไตรมาสล่าสุดรายไตรมาส"></canvas>
     </div>
   </div>
@@ -171,10 +168,11 @@ function quarterLabel(periodEnd) {
   return `${y}Q${q}`;
 }
 
-function fmt(v, decimals) {
-  if (v === null || v === undefined) return '<td class="na">—</td>';
+function fmt(v, decimals, extraClass) {
+  const extra = extraClass ? extraClass + ' ' : '';
+  if (v === null || v === undefined) return `<td class="${extra}na">—</td>`;
   const cls = v < 0 ? 'neg' : (v > 0 ? 'pos' : '');
-  return `<td class="${cls}">${v.toLocaleString('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals})}</td>`;
+  return `<td class="${extra}${cls}">${v.toLocaleString('en-US', {minimumFractionDigits: decimals, maximumFractionDigits: decimals})}</td>`;
 }
 function fmtPct(v) {
   if (v === null || v === undefined) return '<td class="na">—</td>';
@@ -235,7 +233,8 @@ function renderTtmChart(symbol, records, start) {
 let lastPivotRecords = null;
 let lastPivotSymbol = null;
 let pivotMetric = 'eps';
-let showYoyQoq = false;
+let showYoy = false;
+let showQoq = false;
 function renderPivot(symbol, records) {
   if (records) { lastPivotRecords = records; lastPivotSymbol = symbol; }
   records = lastPivotRecords; symbol = lastPivotSymbol;
@@ -263,13 +262,17 @@ function renderPivot(symbol, records) {
     `<option value="net_profit"${isEps ? '' : ' selected'}>กำไรสุทธิ (ล้านบาท)</option>` +
     `</select>` +
     `<label style="font-size:13px; color:var(--muted); display:flex; align-items:center; gap:5px; cursor:pointer;">` +
-    `<input type="checkbox" ${showYoyQoq ? 'checked' : ''} onchange="showYoyQoq=this.checked; renderPivot(null);"> แสดง YoY/QoQ` +
+    `<input type="checkbox" ${showYoy ? 'checked' : ''} onchange="showYoy=this.checked; renderPivot(null);"> แสดง YoY` +
+    `</label>` +
+    `<label style="font-size:13px; color:var(--muted); display:flex; align-items:center; gap:5px; cursor:pointer;">` +
+    `<input type="checkbox" ${showQoq ? 'checked' : ''} onchange="showQoq=this.checked; renderPivot(null);"> แสดง QoQ` +
     `</label></div>`;
 
   html += '<table class="pivot"><thead><tr><th>ปี</th>';
   for (const qn of [1, 2, 3, 4]) {
-    html += `<th>Q${qn}</th>`;
-    if (showYoyQoq) html += `<th>YoY</th><th>QoQ</th>`;
+    html += `<th class="q-col">Q${qn}</th>`;
+    if (showYoy) html += `<th>YoY</th>`;
+    if (showQoq) html += `<th>QoQ</th>`;
   }
   html += '<th>รวมทั้งปี</th></tr></thead><tbody>';
 
@@ -280,11 +283,9 @@ function renderPivot(symbol, records) {
       const r = years[y][q];
       const val = r ? (isEps ? r.eps : m(r.net_profit)) : null;
       if (val !== null && val !== undefined) total = (total ?? 0) + val;
-      html += fmt(val, decimals);
-      if (showYoyQoq) {
-        html += isEps ? (fmtPct(r ? r.eps_yoy : null) + fmtPct(r ? r.eps_qoq : null))
-                      : (fmtPct(r ? r.np_yoy : null) + fmtPct(r ? r.np_qoq : null));
-      }
+      html += fmt(val, decimals, 'q-col');
+      if (showYoy) html += fmtPct(r ? (isEps ? r.eps_yoy : r.np_yoy) : null);
+      if (showQoq) html += fmtPct(r ? (isEps ? r.eps_qoq : r.np_qoq) : null);
     }
     html += fmt(total, decimals);
     html += '</tr>';
