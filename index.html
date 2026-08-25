@@ -188,42 +188,81 @@ function renderTtmChart(symbol, records, start) {
     if (records[i].period_end < start) continue;
     const window = records.slice(i - 3, i + 1);
     const ttm = window.reduce((s, r) => s + (r.eps || 0), 0);
-    points.push({ quarter: quarterLabel(records[i].period_end), ttm_eps: Math.round(ttm * 10000) / 10000 });
+    points.push({
+      quarter: quarterLabel(records[i].period_end),
+      ttm_eps: Math.round(ttm * 10000) / 10000,
+      close: records[i].close === undefined ? null : records[i].close,
+    });
   }
   if (!points.length) { chartWrap.style.display = 'none'; return; }
 
   chartWrap.style.display = 'block';
-  document.getElementById('chartTitle').textContent = `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส (บาท)`;
+  document.getElementById('chartTitle').textContent = `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส เทียบกับราคาหุ้น (บาท)`;
 
   const labels = points.map(p => p.quarter);
   const values = points.map(p => p.ttm_eps);
+  const prices = points.map(p => p.close);
+  const hasPrice = prices.some(v => v !== null);
   if (ttmChartInstance) ttmChartInstance.destroy();
 
   const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
   const lineColor = isDark ? '#3987e5' : '#2a78d6';
+  const priceColor = isDark ? '#e5a33b' : '#d4820a';
+  const datasets = [{
+    label: 'EPS สะสม 4 ไตรมาส', data: values, borderColor: lineColor,
+    backgroundColor: lineColor + '1a', borderWidth: 2, pointRadius: 0,
+    pointHoverRadius: 5, pointHoverBackgroundColor: lineColor, fill: true, tension: 0.15,
+    yAxisID: 'y',
+  }];
+  if (hasPrice) {
+    datasets.push({
+      label: 'ราคาหุ้น (ปิดสิ้นไตรมาส)', data: prices, borderColor: priceColor,
+      backgroundColor: 'transparent', borderWidth: 2, pointRadius: 0,
+      pointHoverRadius: 5, pointHoverBackgroundColor: priceColor, fill: false,
+      tension: 0.15, spanGaps: true, yAxisID: 'yPrice',
+    });
+  }
+
+  const scales = {
+    x: {
+      grid: { display: false },
+      ticks: labels.length <= 24
+        ? { color: '#9aa4b2', maxRotation: 60, minRotation: 60, autoSkip: false }
+        : { color: '#9aa4b2', maxRotation: 60, minRotation: 60, autoSkip: true, maxTicksLimit: 18 }
+    },
+    y: {
+      position: 'left',
+      grid: { color: '#2a2f3a' },
+      ticks: { color: lineColor, callback: (v) => v.toFixed(2) }
+    }
+  };
+  if (hasPrice) {
+    scales.yPrice = {
+      position: 'right',
+      grid: { drawOnChartArea: false },
+      ticks: { color: priceColor, callback: (v) => v.toFixed(2) }
+    };
+  }
+
   ttmChartInstance = new Chart(document.getElementById('ttmChart'), {
     type: 'line',
-    data: { labels, datasets: [{
-      label: 'EPS สะสม 4 ไตรมาส', data: values, borderColor: lineColor,
-      backgroundColor: lineColor + '1a', borderWidth: 2, pointRadius: 0,
-      pointHoverRadius: 5, pointHoverBackgroundColor: lineColor, fill: true, tension: 0.15,
-    }]},
+    data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode: 'index', intersect: false },
       plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: (ctx) => 'EPS สะสม 4 ไตรมาส: ' + ctx.parsed.y.toFixed(3) + ' บาท' } }
-      },
-      scales: {
-        x: {
-          grid: { display: false },
-          ticks: labels.length <= 24
-            ? { color: '#9aa4b2', maxRotation: 60, minRotation: 60, autoSkip: false }
-            : { color: '#9aa4b2', maxRotation: 60, minRotation: 60, autoSkip: true, maxTicksLimit: 18 }
+        legend: {
+          display: hasPrice,
+          labels: { color: '#9aa4b2', boxWidth: 12, usePointStyle: true, pointStyle: 'line' }
         },
-        y: { grid: { color: '#2a2f3a' }, ticks: { color: '#9aa4b2', callback: (v) => v.toFixed(2) } }
-      }
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.parsed.y === null ? null
+              : ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(ctx.dataset.yAxisID === 'yPrice' ? 2 : 3) + ' บาท'
+          }
+        }
+      },
+      scales
     }
   });
 }
