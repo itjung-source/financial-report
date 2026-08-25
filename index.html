@@ -236,6 +236,8 @@ function renderTtmChart(symbol, records, start) {
       quarter: quarterLabel(records[i].period_end),
       ttm_eps: Math.round(ttm * 10000) / 10000,
       close: records[i].close === undefined ? null : records[i].close,
+      pe: records[i].pe === undefined ? null : records[i].pe,
+      pbv: records[i].pbv === undefined ? null : records[i].pbv,
     });
   }
   if (!points.length) { chartWrap.style.display = 'none'; return; }
@@ -302,7 +304,16 @@ function renderTtmChart(symbol, records, start) {
         tooltip: {
           callbacks: {
             label: (ctx) => ctx.parsed.y === null ? null
-              : ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(ctx.dataset.yAxisID === 'yPrice' ? 2 : 3) + ' บาท'
+              : ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(ctx.dataset.yAxisID === 'yPrice' ? 2 : 3) + ' บาท',
+            // ต่อท้าย P/E และ P/BV ของไตรมาสนั้น (ครั้งเดียวต่อ tooltip ไม่ผูกกับเส้นใดเส้นหนึ่ง)
+            afterBody: (items) => {
+              const p = points[items[0].dataIndex];
+              if (!p) return [];
+              const out = [];
+              if (p.pe !== null && p.pe !== undefined) out.push('P/E: ' + p.pe.toFixed(2) + ' เท่า');
+              if (p.pbv !== null && p.pbv !== undefined) out.push('P/BV: ' + p.pbv.toFixed(2) + ' เท่า');
+              return out;
+            }
           }
         }
       },
