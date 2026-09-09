@@ -252,8 +252,8 @@ function renderTtmChart(symbol, records, start) {
   if (ttmChartInstance) ttmChartInstance.destroy();
 
   const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const lineColor = isDark ? '#3987e5' : '#2a78d6';
-  const priceColor = isDark ? '#e5a33b' : '#d4820a';
+  const lineColor = isDark ? '#33c37a' : '#1f9d5f';   // EPS สะสม = เขียว
+  const priceColor = isDark ? '#ff5c5c' : '#d93838';  // ราคาหุ้น = แดง
   const datasets = [{
     label: 'EPS สะสม 4 ไตรมาส', data: values, borderColor: lineColor,
     backgroundColor: lineColor + '1a', borderWidth: 2, pointRadius: 0,
