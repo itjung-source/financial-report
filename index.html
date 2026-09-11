@@ -69,6 +69,13 @@
     background: var(--panel); border: 1px solid var(--border); color: var(--text);
     padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
   }
+  .mode-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .mode-toggle button {
+    background: var(--panel); border: 0; color: var(--muted);
+    padding: 5px 14px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .mode-toggle button + button { border-left: 1px solid var(--border); }
+  .mode-toggle button.on { background: var(--accent); color: #fff; font-weight: 600; }
   table.pivot th, table.pivot td { padding: 8px 10px; }
   table.pivot th.q-col, table.pivot td.q-col { background: var(--eps-col); }
   table.main tbody tr:nth-child(even) { background: var(--row-alt); }
@@ -134,6 +141,10 @@
     หมายเหตุ: <span class="prelim-badge">F45</span> = ข้อมูลเบื้องต้นจากข่าว F45 (มีแค่กำไรสุทธิ/EPS ยังไม่มีรายได้/GPM เต็ม)
     &nbsp;|&nbsp; QoQ%/YoY% ของตารางล่าง คือของกำไรสุทธิ, QoQ%/YoY% ของตาราง EPS ด้านบน คือของ EPS
     &nbsp;|&nbsp; กราฟบนสุด = EPS สะสมย้อนหลัง 4 ไตรมาส (TTM)
+    <br>โหมดรายปี: รายได้/กำไรขั้นต้น/SG&A/กำไรสุทธิ/EPS = ผลรวมทั้งปี จะแสดงก็ต่อเมื่อมีค่าครบทุกไตรมาส
+    ถ้าขาดไตรมาสใดจะขึ้น — แทน (กันยอดรวมไม่ครบแต่ดูเหมือนครบ),
+    GPM%/NPM% คิดใหม่จากยอดรวม, ส่วน P/E, P/BV, ROE% เป็นค่า ณ ไตรมาสท้ายสุดของปีนั้น (ไม่ใช่ค่าเฉลี่ย)
+    &nbsp;|&nbsp; YoY% รายปีจะแสดงเฉพาะเมื่อทั้งสองปีมีจำนวนไตรมาสเท่ากัน ปีที่ยังไม่ครบจะวงเล็บบอกไว้
   </div>
 </div>
 
@@ -222,6 +233,108 @@ async function renderProfile(symbol) {
   biz.textContent = p.business || '';
   biz.style.display = p.business ? 'block' : 'none';
   wrap.style.display = 'block';
+}
+
+let lastMainRecords = null;
+let lastMainSymbol = null;
+let mainMode = 'year';   // 'year' = รายปี (default) | 'quarter' = รายไตรมาส
+
+function setMainMode(mode) {
+  mainMode = mode;
+  document.getElementById('modeYear').classList.toggle('on', mode === 'year');
+  document.getElementById('modeQuarter').classList.toggle('on', mode === 'quarter');
+  if (lastMainRecords) renderMain();
+}
+
+// ยุบรายไตรมาสเป็นรายปี: ยอดในงบบวกกัน ส่วนอัตราส่วนคิดใหม่จากยอดรวม
+// ยกเว้น P/E, P/BV, ROE ที่เป็นค่า ณ เวลาหนึ่ง ใช้ของไตรมาสล่าสุดที่มีในปีนั้น
+function toYearly(records) {
+  const byYear = new Map();
+  for (const r of records) {
+    const y = r.period_end.slice(0, 4);
+    if (!byYear.has(y)) byYear.set(y, []);
+    byYear.get(y).push(r);
+  }
+  const out = [];
+  for (const [year, rows] of byYear) {
+    // รวมเฉพาะเมื่อมีค่าครบทุกไตรมาสที่แสดงอยู่ ถ้าขาดไตรมาสไหนคืน null
+    // (ยอดรวมที่ขาดไปบางไตรมาสแต่แสดงเหมือนเป็นทั้งปี จะทำให้เข้าใจผิด)
+    const sum = (k) => {
+      const vals = rows.map(r => r[k]);
+      if (vals.some(v => v === null || v === undefined)) return null;
+      return vals.reduce((a, b) => a + b, 0);
+    };
+    const revenue = sum('revenue'), gross = sum('gross_profit'), net = sum('net_profit');
+    // ค่า ณ สิ้นงวด เอาไตรมาสท้ายสุดของปีที่มีค่านั้นจริง
+    const latest = (k) => {
+      for (let i = rows.length - 1; i >= 0; i--) {
+        if (rows[i][k] !== null && rows[i][k] !== undefined) return rows[i][k];
+      }
+      return null;
+    };
+    out.push({
+      label: `${year} (${rows.length} ไตรมาส)`,
+      year, quarters: rows.length,
+      revenue, gross_profit: gross, sga: sum('sga'),
+      gpm: revenue ? gross / revenue * 100 : null,
+      npm: revenue && net !== null ? net / revenue * 100 : null,
+      net_profit: net, eps: sum('eps'),
+      pe: latest('pe'), pbv: latest('pbv'), roe: latest('roe'),
+      preliminary: rows.some(r => r.revenue === null && r.net_profit !== null),
+    });
+  }
+  // YoY ของกำไรสุทธิ เทียบปีก่อนหน้า เฉพาะเมื่อจำนวนไตรมาสเท่ากัน ไม่งั้นเทียบกันไม่ได้
+  out.sort((a, b) => a.year.localeCompare(b.year));
+  for (let i = 1; i < out.length; i++) {
+    const cur = out[i], prev = out[i - 1];
+    if (cur.net_profit !== null && prev.net_profit && cur.quarters === prev.quarters) {
+      cur.np_yoy = (cur.net_profit - prev.net_profit) / Math.abs(prev.net_profit) * 100;
+    }
+  }
+  return out;
+}
+
+function renderMain() {
+  const result = document.getElementById('result');
+  const symbol = lastMainSymbol;
+  const yearly = mainMode === 'year';
+  const rows = yearly ? toYearly(lastMainRecords) : [...lastMainRecords];
+  rows.reverse();   // ใหม่อยู่บน
+
+  let html = `<div class="pivot-head">` +
+    `<h2 class="subhead">${symbol} — งบกำไรขาดทุน${yearly ? 'รายปี' : 'รายไตรมาส'}</h2>` +
+    `<span class="mode-toggle">` +
+    `<button id="modeYear" class="${yearly ? 'on' : ''}" onclick="setMainMode('year')">รายปี</button>` +
+    `<button id="modeQuarter" class="${yearly ? '' : 'on'}" onclick="setMainMode('quarter')">รายไตรมาส</button>` +
+    `</span></div>`;
+  html += '<table class="main"><thead><tr>' +
+    `<th>${yearly ? 'ปี' : 'ไตรมาส'}</th><th>รายได้</th><th>กำไรขั้นต้น</th><th>SG&A</th>` +
+    '<th>GPM%</th><th>NPM%</th><th>กำไรสุทธิ</th><th>EPS</th>' +
+    '<th>P/E</th><th>P/BV</th><th>ROE%</th>' +
+    (yearly ? '' : '<th>QoQ%</th>') + '<th>YoY%</th>' +
+    '</tr></thead><tbody>';
+
+  for (const r of rows) {
+    const preliminary = yearly ? r.preliminary : (r.revenue === null && r.net_profit !== null);
+    const badge = preliminary ? '<span class="prelim-badge">F45</span>' : '';
+    html += '<tr>' +
+      `<td>${yearly ? r.label : quarterLabel(r.period_end)}${badge}</td>` +
+      fmt(m(r.revenue), 1) +
+      fmt(m(r.gross_profit), 1) +
+      fmt(m(r.sga), 1) +
+      fmtPct(r.gpm) +
+      fmtPct(r.npm) +
+      fmt(m(r.net_profit), 1) +
+      fmt(r.eps, 3) +
+      fmt(r.pe, 2) +
+      fmt(r.pbv, 2) +
+      fmtPct(r.roe) +
+      (yearly ? '' : fmtPct(r.np_qoq)) +
+      fmtPct(r.np_yoy) +
+      '</tr>';
+  }
+  html += '</tbody></table>';
+  result.innerHTML = html;
 }
 
 let ttmChartInstance = null;
@@ -414,31 +527,9 @@ async function load() {
     renderTtmChart(symbol, allRecords, start);
     renderPivot(symbol, allRecords.filter(r => r.period_end >= start));
 
-    let html = `<h2 class="subhead">${symbol} — งบกำไรขาดทุนรายไตรมาส</h2>`;
-    html += '<table class="main"><thead><tr>' +
-      '<th>ไตรมาส</th><th>รายได้</th><th>กำไรขั้นต้น</th><th>SG&A</th>' +
-      '<th>GPM%</th><th>NPM%</th><th>กำไรสุทธิ</th><th>EPS</th><th>QoQ%</th><th>YoY%</th>' +
-      '</tr></thead><tbody>';
-
-    const quartersDesc = [...records].reverse();
-    for (const r of quartersDesc) {
-      const preliminary = r.revenue === null && r.net_profit !== null;
-      const badge = preliminary ? '<span class="prelim-badge">F45</span>' : '';
-      html += '<tr>' +
-        `<td>${quarterLabel(r.period_end)}${badge}</td>` +
-        fmt(m(r.revenue), 1) +
-        fmt(m(r.gross_profit), 1) +
-        fmt(m(r.sga), 1) +
-        fmtPct(r.gpm) +
-        fmtPct(r.npm) +
-        fmt(m(r.net_profit), 1) +
-        fmt(r.eps, 3) +
-        fmtPct(r.np_qoq) +
-        fmtPct(r.np_yoy) +
-        '</tr>';
-    }
-    html += '</tbody></table>';
-    result.innerHTML = html;
+    lastMainRecords = records;
+    lastMainSymbol = symbol;
+    renderMain();
     note.style.display = 'block';
   } catch (e) {
     status.textContent = 'โหลดข้อมูลไม่สำเร็จ: ' + e;
