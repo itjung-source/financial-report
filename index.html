@@ -64,6 +64,20 @@
     border: 1px solid var(--border); border-radius: 999px; padding: 2px 10px; white-space: nowrap;
   }
   .profile-business { font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+  .stat {
+    flex: 1 1 170px; background: var(--panel); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 16px;
+  }
+  .stat-label { font-size: 12px; color: var(--muted); }
+  .stat-value { font-size: 19px; font-weight: 700; margin-top: 3px; }
+  .stat-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+  .stat.warn { border-color: var(--neg); }
+  .stat.warn .stat-value { color: var(--neg); }
+  .stat-warn-tag {
+    display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
+    background: var(--neg); border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: 2px;
+  }
   .pivot-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
   .metric-select {
     background: var(--panel); border: 1px solid var(--border); color: var(--text);
@@ -128,6 +142,10 @@
       </div>
       <div class="profile-business" id="profileBusiness"></div>
     </div>
+  </div>
+  <div class="wrap" id="bsWrap" style="display:none">
+    <h2 class="subhead" id="bsTitle"></h2>
+    <div class="stat-row" id="bsStats"></div>
   </div>
   <div class="wrap" id="chartWrap" style="display:none">
     <h2 class="subhead" id="chartTitle"></h2>
@@ -232,6 +250,40 @@ async function renderProfile(symbol) {
   const biz = document.getElementById('profileBusiness');
   biz.textContent = p.business || '';
   biz.style.display = p.business ? 'block' : 'none';
+  wrap.style.display = 'block';
+}
+
+const DE_WARN = 2;   // D/E เกินเท่านี้ถือว่าสูง แสดงเป็นสีแดงเตือน
+
+// ฐานะการเงินล่าสุด แสดงก่อนกราฟ EPS สะสม
+function renderBalanceSheet(symbol, records) {
+  const wrap = document.getElementById('bsWrap');
+  // ไตรมาสล่าสุดที่มีข้อมูลงบดุลจริง (บางไตรมาสมีแต่งบกำไรขาดทุน)
+  let r = null;
+  for (let i = records.length - 1; i >= 0; i--) {
+    const x = records[i];
+    if (x.asset !== null || x.equity !== null || x.debt !== null) { r = x; break; }
+  }
+  if (!r) { wrap.style.display = 'none'; return; }
+
+  const bn = (v) => v === null || v === undefined ? '—'
+    : (Math.abs(v) >= 1e9 ? (v / 1e9).toLocaleString('en-US', {maximumFractionDigits: 2}) + ' พันล้าน'
+                          : (v / 1e6).toLocaleString('en-US', {maximumFractionDigits: 1}) + ' ล้าน');
+  const high = r.de !== null && r.de !== undefined && r.de > DE_WARN;
+
+  document.getElementById('bsTitle').textContent =
+    `${symbol} — ฐานะการเงินล่าสุด (${quarterLabel(r.period_end)})`;
+  document.getElementById('bsStats').innerHTML =
+    `<div class="stat"><div class="stat-label">สินทรัพย์รวม</div>` +
+      `<div class="stat-value">${bn(r.asset)}</div><div class="stat-sub">บาท</div></div>` +
+    `<div class="stat"><div class="stat-label">หนี้สินรวม</div>` +
+      `<div class="stat-value">${bn(r.debt)}</div><div class="stat-sub">บาท</div></div>` +
+    `<div class="stat"><div class="stat-label">ส่วนของผู้ถือหุ้น</div>` +
+      `<div class="stat-value">${bn(r.equity)}</div><div class="stat-sub">บาท</div></div>` +
+    `<div class="stat${high ? ' warn' : ''}"><div class="stat-label">D/E</div>` +
+      `<div class="stat-value">${r.de === null || r.de === undefined ? '—' : r.de.toFixed(2) + ' เท่า'}` +
+      `${high ? '<span class="stat-warn-tag">สูง</span>' : ''}</div>` +
+      `<div class="stat-sub">${high ? `เกิน ${DE_WARN} เท่า — หนี้สูงเมื่อเทียบกับทุน` : `เกณฑ์เตือนที่ ${DE_WARN} เท่า`}</div></div>`;
   wrap.style.display = 'block';
 }
 
@@ -510,6 +562,7 @@ async function load() {
   status.className = ''; result.innerHTML = ''; pivot.innerHTML = ''; note.style.display = 'none';
   chartWrap.style.display = 'none';
   document.getElementById('profileWrap').style.display = 'none';
+  document.getElementById('bsWrap').style.display = 'none';
 
   if (!symbol) { status.textContent = 'ใส่ชื่อหุ้นก่อนครับ'; status.className = 'error'; return; }
   status.textContent = 'กำลังโหลด...';
@@ -524,6 +577,7 @@ async function load() {
     status.textContent = '';
 
     renderProfile(symbol);
+    renderBalanceSheet(symbol, allRecords);
     renderTtmChart(symbol, allRecords, start);
     renderPivot(symbol, allRecords.filter(r => r.period_end >= start));
 
