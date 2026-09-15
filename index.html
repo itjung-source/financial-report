@@ -75,10 +75,14 @@
   .stat-sub { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
   .stat.warn { border-color: var(--neg); }
   .stat.warn .stat-value { color: var(--neg); }
-  .stat-warn-tag {
+  .stat.good { border-color: var(--pos); }
+  .stat.good .stat-value { color: var(--pos); }
+  .stat-warn-tag, .stat-good-tag {
     display: inline-block; font-size: 11px; font-weight: 600; color: #fff;
-    background: var(--neg); border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: 2px;
+    border-radius: 4px; padding: 1px 6px; margin-left: 6px; vertical-align: 2px;
   }
+  .stat-warn-tag { background: var(--neg); }
+  .stat-good-tag { background: var(--pos); }
   .pivot-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; flex-wrap: wrap; }
   .metric-select {
     background: var(--panel); border: 1px solid var(--border); color: var(--text);
@@ -272,10 +276,15 @@ function renderBalanceSheet(symbol, records) {
                           : (v / 1e6).toLocaleString('en-US', {maximumFractionDigits: 1}) + ' ล้าน');
   const high = r.de !== null && r.de !== undefined && r.de > DE_WARN;
   // การ์ดอัตราส่วน ใช้ไตรมาสเดียวกับงบดุลด้านซ้าย จะได้อ่านเป็นชุดเดียวกัน
-  const ratio = (label, v, unit, sub) =>
-    `<div class="stat sm"><div class="stat-label">${label}</div>` +
-    `<div class="stat-value">${v === null || v === undefined ? '—' : v.toFixed(2) + unit}</div>` +
-    `<div class="stat-sub">${sub}</div></div>`;
+  // grade คืน ['good'|'warn', ป้ายกำกับ] หรือ null ถ้าอยู่ในเกณฑ์กลาง
+  const ratio = (label, v, unit, sub, grade) => {
+    const has = v !== null && v !== undefined;
+    const g = has && grade ? grade(v) : null;
+    return `<div class="stat sm${g ? ' ' + g[0] : ''}"><div class="stat-label">${label}</div>` +
+      `<div class="stat-value">${has ? v.toFixed(2) + unit : '—'}` +
+      `${g ? `<span class="stat-${g[0]}-tag">${g[1]}</span>` : ''}</div>` +
+      `<div class="stat-sub">${sub}</div></div>`;
+  };
 
   document.getElementById('bsTitle').textContent =
     `${symbol} — ฐานะการเงินและอัตราส่วนล่าสุด (${quarterLabel(r.period_end)})`;
@@ -290,11 +299,16 @@ function renderBalanceSheet(symbol, records) {
       `<div class="stat-value">${r.de === null || r.de === undefined ? '—' : r.de.toFixed(2) + ' เท่า'}` +
       `${high ? '<span class="stat-warn-tag">สูง</span>' : ''}</div>` +
       `<div class="stat-sub">${high ? `เกิน ${DE_WARN} เท่า — หนี้สูงเมื่อเทียบกับทุน` : `เกณฑ์เตือนที่ ${DE_WARN} เท่า`}</div></div>` +
-    ratio('GPM%', r.gpm, '%', 'กำไรขั้นต้น/รายได้') +
-    ratio('NPM%', r.npm, '%', 'กำไรสุทธิ/รายได้') +
-    ratio('ROE', r.roe, '%', 'ย้อนหลัง 12 เดือน') +
-    ratio('P/E', r.pe, ' เท่า', 'ราคา/กำไรต่อหุ้น') +
-    ratio('P/BV', r.pbv, ' เท่า', 'ราคา/มูลค่าทางบัญชี');
+    ratio('GPM%', r.gpm, '%', 'ดีเมื่อ ≥ 35%',
+      v => v >= 35 ? ['good', 'ดี'] : null) +
+    ratio('NPM%', r.npm, '%', 'ดีเมื่อ ≥ 15%',
+      v => v >= 15 ? ['good', 'ดี'] : v < 0 ? ['warn', 'ขาดทุน'] : null) +
+    ratio('ROE', r.roe, '%', 'ดีเมื่อ ≥ 20% (ย้อนหลัง 12 เดือน)',
+      v => v >= 20 ? ['good', 'ดี'] : v < 0 ? ['warn', 'ติดลบ'] : null) +
+    ratio('P/E', r.pe, ' เท่า', 'ถูกเมื่อ < 10, แพงเมื่อ > 30',
+      v => v > 0 && v < 10 ? ['good', 'ถูก'] : v > 30 ? ['warn', 'แพง'] : null) +
+    ratio('P/BV', r.pbv, ' เท่า', 'ถูกเมื่อ < 1',
+      v => v > 0 && v < 1 ? ['good', 'ถูก'] : null);
   wrap.style.display = 'block';
 }
 
