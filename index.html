@@ -163,7 +163,8 @@
   <div class="note" id="note" style="display:none">
     หมายเหตุ: <span class="prelim-badge">F45</span> = ข้อมูลเบื้องต้นจากข่าว F45 (มีแค่กำไรสุทธิ/EPS ยังไม่มีรายได้/GPM เต็ม)
     &nbsp;|&nbsp; QoQ%/YoY% ของตารางล่าง คือของกำไรสุทธิ, QoQ%/YoY% ของตาราง EPS ด้านบน คือของ EPS
-    &nbsp;|&nbsp; กราฟบนสุด = EPS สะสมย้อนหลัง 4 ไตรมาส (TTM)
+    &nbsp;|&nbsp; กราฟบนสุดเลือกได้ว่าจะเทียบราคาหุ้นกับ EPS สะสม 4 ไตรมาส (TTM) หรือกับดัชนี SET
+    — ดัชนี SET ย้อนหลังได้ถึงไตรมาส 3/2564 เท่านั้น (SET API ให้ย้อนได้สูงสุด 5 ปี) ไตรมาสก่อนหน้านั้นเส้นจะว่าง
     <br>โหมดรายปี: รายได้/กำไรขั้นต้น/SG&A/กำไรสุทธิ/EPS = ผลรวมทั้งปี จะแสดงก็ต่อเมื่อมีค่าครบทุกไตรมาส
     ถ้าขาดไตรมาสใดจะขึ้น — แทน (กันยอดรวมไม่ครบแต่ดูเหมือนครบ),
     GPM%/NPM% คิดใหม่จากยอดรวม, ส่วน P/E, P/BV, ROE% เป็นค่า ณ ไตรมาสท้ายสุดของปีนั้น (ไม่ใช่ค่าเฉลี่ย)
@@ -415,7 +416,26 @@ function renderMain() {
 }
 
 let ttmChartInstance = null;
+let chartMode = 'eps';        // 'eps' = EPS สะสม vs ราคา (default) | 'set' = ดัชนี SET vs ราคา
+let setIndexByQuarter = {};   // period_end -> ค่าดัชนี SET ณ สิ้นไตรมาส
+let lastChartArgs = null;
+
+async function loadSetIndex() {
+  if (Object.keys(setIndexByQuarter).length) return;
+  try {
+    const res = await fetch('data/set_index.json', { cache: 'no-store' });
+    if (res.ok) setIndexByQuarter = await res.json();
+  } catch (e) { /* ไม่มีดัชนีก็ยังดูโหมด EPS ได้ ไม่ต้องพังทั้งหน้า */ }
+}
+
+async function setChartMode(mode) {
+  chartMode = mode;
+  if (mode === 'set') await loadSetIndex();
+  if (lastChartArgs) renderTtmChart(...lastChartArgs);
+}
+
 function renderTtmChart(symbol, records, start) {
+  lastChartArgs = [symbol, records, start];
   const chartWrap = document.getElementById('chartWrap');
   const points = [];
   for (let i = 3; i < records.length; i++) {
@@ -424,6 +444,7 @@ function renderTtmChart(symbol, records, start) {
     const ttm = window.reduce((s, r) => s + (r.eps || 0), 0);
     points.push({
       quarter: quarterLabel(records[i].period_end),
+      period_end: records[i].period_end,
       ttm_eps: Math.round(ttm * 10000) / 10000,
       close: records[i].close === undefined ? null : records[i].close,
       pe: records[i].pe === undefined ? null : records[i].pe,
@@ -432,22 +453,37 @@ function renderTtmChart(symbol, records, start) {
   }
   if (!points.length) { chartWrap.style.display = 'none'; return; }
 
+  const vsSet = chartMode === 'set';
+  // โหมดเทียบ SET: ดัชนีย้อนหลังได้แค่ 5 ปี (ข้อจำกัดของ SET API) ไตรมาสก่อนหน้านั้นจะว่าง
+  if (vsSet) {
+    for (const p of points) p.setIndex = setIndexByQuarter[p.period_end] ?? null;
+  }
+
   chartWrap.style.display = 'block';
-  document.getElementById('chartTitle').textContent = `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส เทียบกับราคาหุ้น (บาท)`;
+  document.getElementById('chartTitle').innerHTML =
+    `${symbol} — ${vsSet ? 'ดัชนี SET' : 'EPS สะสมย้อนหลัง 4 ไตรมาส'} เทียบกับราคาหุ้น` +
+    `<span class="mode-toggle" style="margin-left:10px;">` +
+    `<button class="${vsSet ? '' : 'on'}" onclick="setChartMode('eps')">EPS</button>` +
+    `<button class="${vsSet ? 'on' : ''}" onclick="setChartMode('set')">SET</button>` +
+    `</span>`;
 
   const labels = points.map(p => p.quarter);
-  const values = points.map(p => p.ttm_eps);
+  const values = points.map(p => vsSet ? p.setIndex : p.ttm_eps);
   const prices = points.map(p => p.close);
   const hasPrice = prices.some(v => v !== null);
   if (ttmChartInstance) ttmChartInstance.destroy();
 
   const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const lineColor = isDark ? '#33c37a' : '#1f9d5f';   // EPS สะสม = เขียว
+  const epsColor = isDark ? '#33c37a' : '#1f9d5f';    // EPS สะสม = เขียว
+  const setColor = isDark ? '#7aa2f7' : '#3b6fd4';    // ดัชนี SET = น้ำเงิน
+  const lineColor = vsSet ? setColor : epsColor;
   const priceColor = isDark ? '#ff5c5c' : '#d93838';  // ราคาหุ้น = แดง
   const datasets = [{
-    label: 'EPS สะสม 4 ไตรมาส', data: values, borderColor: lineColor,
+    label: vsSet ? 'ดัชนี SET (ปิดสิ้นไตรมาส)' : 'EPS สะสม 4 ไตรมาส',
+    data: values, borderColor: lineColor,
     backgroundColor: lineColor + '1a', borderWidth: 2, pointRadius: 0,
-    pointHoverRadius: 5, pointHoverBackgroundColor: lineColor, fill: true, tension: 0.15,
+    pointHoverRadius: 5, pointHoverBackgroundColor: lineColor,
+    fill: !vsSet, tension: 0.15, spanGaps: true,
     yAxisID: 'y',
   }];
   if (hasPrice) {
@@ -469,7 +505,7 @@ function renderTtmChart(symbol, records, start) {
     y: {
       position: 'left',
       grid: { color: '#2a2f3a' },
-      ticks: { color: lineColor, callback: (v) => v.toFixed(2) }
+      ticks: { color: lineColor, callback: (v) => vsSet ? v.toFixed(0) : v.toFixed(2) }
     }
   };
   if (hasPrice) {
@@ -493,8 +529,13 @@ function renderTtmChart(symbol, records, start) {
         },
         tooltip: {
           callbacks: {
-            label: (ctx) => ctx.parsed.y === null ? null
-              : ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(ctx.dataset.yAxisID === 'yPrice' ? 2 : 3) + ' บาท',
+            label: (ctx) => {
+              if (ctx.parsed.y === null) return null;
+              const isPrice = ctx.dataset.yAxisID === 'yPrice';
+              // ดัชนี SET มีหน่วยเป็นจุด ไม่ใช่บาท
+              if (!isPrice && vsSet) return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' จุด';
+              return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(isPrice ? 2 : 3) + ' บาท';
+            },
             // ต่อท้าย P/E และ P/BV ของไตรมาสนั้น (ครั้งเดียวต่อ tooltip ไม่ผูกกับเส้นใดเส้นหนึ่ง)
             afterBody: (items) => {
               const p = points[items[0].dataIndex];
