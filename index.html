@@ -171,6 +171,10 @@
     <br>โหมดรายปี: รายได้/กำไรขั้นต้น/SG&A/กำไรสุทธิ/EPS = ผลรวมทั้งปี จะแสดงก็ต่อเมื่อมีค่าครบทุกไตรมาส
     ถ้าขาดไตรมาสใดจะขึ้น — แทน (กันยอดรวมไม่ครบแต่ดูเหมือนครบ),
     GPM%/NPM% คิดใหม่จากยอดรวม, ส่วน P/E, P/BV, ROE% เป็นค่า ณ ไตรมาสท้ายสุดของปีนั้น (ไม่ใช่ค่าเฉลี่ย)
+    <br>%ปันผล (โหมดรายปี) = เงินปันผลที่จ่ายทั้งปีนั้น หารด้วยราคาปิดไตรมาสสุดท้ายของปี
+    — ข้อมูลปันผลย้อนได้ถึงปี 2560 ปีก่อนหน้านั้นขึ้น — (ไม่ได้แปลว่าไม่จ่าย),
+    ส่วน 0.0% คือปีที่ไม่มีการจ่ายจริง &nbsp;|&nbsp; %ปันผลในการ์ดด้านบนต่างกัน ใช้เงินปันผล
+    12 เดือนล่าสุดเทียบราคาปัจจุบัน
     &nbsp;|&nbsp; YoY% รายปีจะแสดงเฉพาะเมื่อทั้งสองปีมีจำนวนไตรมาสเท่ากัน ปีที่ยังไม่ครบจะวงเล็บบอกไว้
   </div>
 </div>
@@ -372,6 +376,12 @@ function toYearly(records) {
       npm: revenue && net !== null ? net / revenue * 100 : null,
       net_profit: net, eps: sum('eps'),
       pe: latest('pe'), pbv: latest('pbv'), roe: latest('roe'),
+      // %ปันผลของปีนั้น = เงินปันผลที่จ่ายทั้งปี หารด้วยราคาปิดไตรมาสสุดท้ายของปี
+      dy: (() => {
+        const d = sum('div'), px = latest('close');
+        return d !== null && px ? d / px * 100 : null;
+      })(),
+      dps: sum('div'),
       preliminary: rows.some(r => r.revenue === null && r.net_profit !== null),
     });
   }
@@ -401,7 +411,8 @@ function renderMain() {
     `</span></div>`;
   html += '<table class="main"><thead><tr>' +
     `<th>${yearly ? 'ปี' : 'ไตรมาส'}</th><th>รายได้</th><th>กำไรขั้นต้น</th><th>SG&A</th>` +
-    '<th>GPM%</th><th>NPM%</th><th>กำไรสุทธิ</th><th>EPS</th>' +
+    '<th>GPM%</th><th>NPM%</th><th>กำไรสุทธิ</th>' +
+    (yearly ? '<th>%ปันผล</th>' : '') + '<th>EPS</th>' +
     '<th>P/E</th><th>P/BV</th><th>ROE%</th>' +
     (yearly ? '' : '<th>QoQ%</th>') + '<th>YoY%</th>' +
     '</tr></thead><tbody>';
@@ -417,6 +428,7 @@ function renderMain() {
       fmtPct(r.gpm) +
       fmtPct(r.npm) +
       fmt(m(r.net_profit), 1) +
+      (yearly ? fmtPct(r.dy) : '') +
       fmt(r.eps, 3) +
       fmt(r.pe, 2) +
       fmt(r.pbv, 2) +
