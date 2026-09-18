@@ -343,6 +343,18 @@ function renderBalanceSheet(symbol, records) {
   const high = r.de !== null && r.de !== undefined && r.de > DE_WARN;
   const prof = currentProfile || {};
   const dv = (prof.dy === null || prof.dy === undefined) ? null : prof.dy;
+
+  // P/E, P/BV ที่เก็บไว้คิดกับราคา ณ สิ้นไตรมาส ปรับให้เป็นราคาล่าสุดแทน
+  // โดยคูณอัตราส่วนราคา (ราคาล่าสุด / ราคาสิ้นไตรมาส) ซึ่งเท่ากับ ราคาล่าสุด ÷ EPS(หรือ BVPS) เดิม
+  // ได้ค่าตรงกับ tooltip ของกราฟรายวันพอดี
+  const pxNow = prof.px;
+  const scalable = pxNow && r.close;
+  const rescale = (v) => (scalable && v !== null && v !== undefined) ? v * pxNow / r.close : v;
+  const pe = rescale(r.pe);
+  const pbv = rescale(r.pbv);
+  const priceNote = (rule) => scalable
+    ? `${rule} · เทียบราคา ${pxNow}`
+    : `${rule} · เทียบราคาสิ้นไตรมาส`;
   // การ์ดอัตราส่วน ใช้ไตรมาสเดียวกับงบดุลด้านซ้าย จะได้อ่านเป็นชุดเดียวกัน
   // grade คืน ['good'|'warn', ป้ายกำกับ] หรือ null ถ้าอยู่ในเกณฑ์กลาง
   const ratio = (label, v, unit, sub, grade) => {
@@ -355,7 +367,8 @@ function renderBalanceSheet(symbol, records) {
   };
 
   document.getElementById('bsTitle').textContent =
-    `${symbol} — ฐานะการเงินและอัตราส่วนล่าสุด (${quarterLabel(r.period_end)})`;
+    `${symbol} — ฐานะการเงินและอัตราส่วนล่าสุด (งบ ${quarterLabel(r.period_end)}` +
+    (scalable ? `, ราคา ${prof.px_date || 'ล่าสุด'}` : '') + ')';
   document.getElementById('bsStats').innerHTML =
     `<div class="stat"><div class="stat-label">สินทรัพย์รวม</div>` +
       `<div class="stat-value">${bn(r.asset)}</div><div class="stat-sub">บาท</div></div>` +
@@ -373,14 +386,13 @@ function renderBalanceSheet(symbol, records) {
       v => v >= 15 ? ['good', 'ดี'] : v < 0 ? ['warn', 'ขาดทุน'] : null) +
     ratio('ROE', r.roe, '%', 'ดีเมื่อ ≥ 20% (ย้อนหลัง 12 เดือน)',
       v => v >= 20 ? ['good', 'ดี'] : v < 0 ? ['warn', 'ติดลบ'] : null) +
-    ratio('P/E', r.pe, ' เท่า', 'ถูกเมื่อ < 10, แพงเมื่อ > 30',
+    ratio('P/E', pe, ' เท่า', priceNote('ถูกเมื่อ < 10, แพงเมื่อ > 30'),
       v => v > 0 && v < 10 ? ['good', 'ถูก'] : v > 30 ? ['warn', 'แพง'] : null) +
-    ratio('P/BV', r.pbv, ' เท่า', 'ถูกเมื่อ < 1',
+    ratio('P/BV', pbv, ' เท่า', priceNote('ถูกเมื่อ < 1'),
       v => v > 0 && v < 1 ? ['good', 'ถูก'] : null) +
-    // %ปันผล คิดจากเงินปันผล 12 เดือนล่าสุด เทียบ "ราคาปัจจุบัน" ไม่ใช่ราคาสิ้นไตรมาสเหมือนช่องอื่น
     ratio('เงินปันผล', dv, '%',
       dv === null ? 'ไม่มีการจ่ายปันผลใน 12 เดือน'
-        : `${prof.dps} บาท/หุ้น เทียบราคา ${prof.px}`,
+        : `${prof.dps} บาท/หุ้น ÷ ราคา ${prof.px}`,
       v => v >= DY_GOOD ? ['good', 'ดี'] : null);
   wrap.style.display = 'block';
 }
