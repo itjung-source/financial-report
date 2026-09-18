@@ -88,6 +88,26 @@
     background: var(--panel); border: 1px solid var(--border); color: var(--text);
     padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
   }
+  #moversWrap { margin-bottom: 18px; }
+  .movers-head {
+    display: flex; align-items: center; gap: 10px;
+    font-size: 13px; color: var(--muted); margin-bottom: 8px;
+  }
+  .movers-close {
+    background: none; border: 0; color: var(--muted); cursor: pointer;
+    font-size: 14px; padding: 2px 6px; line-height: 1; font-family: inherit;
+  }
+  .movers-close:hover { color: var(--neg); }
+  .movers-list { display: flex; flex-wrap: wrap; gap: 8px; }
+  .mover {
+    display: flex; align-items: baseline; gap: 7px; cursor: pointer;
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 12px; font-family: inherit; font-size: 13px; color: var(--text);
+  }
+  .mover:hover { border-color: var(--accent); }
+  .mover b { font-weight: 700; }
+  .mover .g { color: var(--pos); font-weight: 600; }
+  .mover .px { color: var(--muted); font-size: 12px; }
   #chartBox {
     position: relative; width: 100%; height: 390px;
     background: var(--panel); border-radius: 10px 10px 0 0; padding: 14px 18px 6px;
@@ -148,10 +168,23 @@
     <span class="label">ตั้งแต่</span>
     <input type="date" id="start" value="2020-01-01">
     <button onclick="load()">แสดงงบ</button>
+    <select class="metric-select" id="moversPick" onchange="showMovers(this.value)">
+      <option value="">หุ้นขึ้นแรง…</option>
+      <option value="day">top day — ขึ้น &gt;5% ใน 1 วัน</option>
+      <option value="week">top week — ขึ้น &gt;15% ใน 5 วัน</option>
+      <option value="month">top month — ขึ้น &gt;30% ใน 20 วัน</option>
+    </select>
     <div style="margin-left:auto; font-size:13px; color:var(--muted);">
       เข้าสู่ระบบเป็น <strong id="whoAmI"></strong> &nbsp;·&nbsp;
       <a href="#" id="logoutLink" style="color:var(--accent);">ออกจากระบบ</a>
     </div>
+  </div>
+  <div id="moversWrap" style="display:none">
+    <div class="movers-head">
+      <span id="moversTitle"></span>
+      <button class="movers-close" onclick="hideMovers()" title="ปิดรายการ">✕</button>
+    </div>
+    <div class="movers-list" id="moversList"></div>
   </div>
   <div id="status"></div>
   <div class="wrap" id="profileWrap" style="display:none">
@@ -873,6 +906,52 @@ async function load() {
     status.textContent = 'โหลดข้อมูลไม่สำเร็จ: ' + e;
     status.className = 'error';
   }
+}
+
+// ----- รายชื่อหุ้นขึ้นแรง -----
+const MOVER_LABEL = {
+  day: 'top day — ขึ้นมากกว่า 5% ใน 1 วันทำการ',
+  week: 'top week — ขึ้นมากกว่า 15% ใน 5 วันทำการ',
+  month: 'top month — ขึ้นมากกว่า 30% ใน 20 วันทำการ',
+};
+let moversData = null;
+
+function hideMovers() {
+  document.getElementById('moversWrap').style.display = 'none';
+  document.getElementById('moversPick').value = '';
+}
+
+async function showMovers(key) {
+  const wrap = document.getElementById('moversWrap');
+  if (!key) { wrap.style.display = 'none'; return; }
+  if (!moversData) {
+    try {
+      const res = await fetch('data/movers.json', { cache: 'no-store' });
+      moversData = res.ok ? await res.json() : false;
+    } catch (e) { moversData = false; }
+  }
+  const list = moversData && moversData.lists ? moversData.lists[key] : null;
+  const title = document.getElementById('moversTitle');
+  const box = document.getElementById('moversList');
+  wrap.style.display = 'block';
+
+  if (!list) {
+    title.textContent = 'โหลดรายชื่อหุ้นไม่สำเร็จ';
+    box.innerHTML = '';
+    return;
+  }
+  title.textContent = `${MOVER_LABEL[key]} — พบ ${list.length} ตัว (ข้อมูล ณ ${moversData.as_of})`;
+  box.innerHTML = list.length
+    ? list.map(x =>
+        `<button class="mover" onclick="pickMover('${esc(x.s)}')">` +
+        `<b>${esc(x.s)}</b><span class="g">+${x.g.toFixed(2)}%</span>` +
+        `<span class="px">${x.px}</span></button>`).join('')
+    : '<span style="font-size:13px;color:var(--muted);">ไม่มีหุ้นเข้าเกณฑ์ในรอบนี้</span>';
+}
+
+function pickMover(symbol) {
+  document.getElementById('symbol').value = symbol;
+  load();
 }
 
 document.getElementById('symbol').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
