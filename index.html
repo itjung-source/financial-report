@@ -242,6 +242,8 @@ function m(v) { return v === null || v === undefined ? null : v / 1e6; }
 function esc(s) {
   return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+let currentProfile = null;   // ใช้ต่อในการ์ดฐานะการเงิน (ราคาล่าสุด + %ปันผล)
+
 async function renderProfile(symbol) {
   const wrap = document.getElementById('profileWrap');
   let p = null;
@@ -249,6 +251,7 @@ async function renderProfile(symbol) {
     const res = await fetch(`data/i_${symbol}.json`, { cache: 'no-store' });
     if (res.ok) p = await res.json();
   } catch (e) { /* ไม่มีข้อมูลบริษัทก็แค่ไม่แสดง ไม่ต้องพังทั้งหน้า */ }
+  currentProfile = p;
   if (!p) { wrap.style.display = 'none'; return; }
 
   document.getElementById('profileName').textContent = p.name ? `${symbol} — ${p.name}` : symbol;
@@ -263,6 +266,7 @@ async function renderProfile(symbol) {
 }
 
 const DE_WARN = 2;   // D/E เกินเท่านี้ถือว่าสูง แสดงเป็นสีแดงเตือน
+const DY_GOOD = 5;   // %ปันผลตั้งแต่เท่านี้ขึ้นไปถือว่าดี แสดงเป็นสีเขียว
 
 // ฐานะการเงินล่าสุด แสดงก่อนกราฟ EPS สะสม
 function renderBalanceSheet(symbol, records) {
@@ -279,6 +283,8 @@ function renderBalanceSheet(symbol, records) {
     : (Math.abs(v) >= 1e9 ? (v / 1e9).toLocaleString('en-US', {maximumFractionDigits: 2}) + ' พันล้าน'
                           : (v / 1e6).toLocaleString('en-US', {maximumFractionDigits: 1}) + ' ล้าน');
   const high = r.de !== null && r.de !== undefined && r.de > DE_WARN;
+  const prof = currentProfile || {};
+  const dv = (prof.dy === null || prof.dy === undefined) ? null : prof.dy;
   // การ์ดอัตราส่วน ใช้ไตรมาสเดียวกับงบดุลด้านซ้าย จะได้อ่านเป็นชุดเดียวกัน
   // grade คืน ['good'|'warn', ป้ายกำกับ] หรือ null ถ้าอยู่ในเกณฑ์กลาง
   const ratio = (label, v, unit, sub, grade) => {
@@ -312,7 +318,12 @@ function renderBalanceSheet(symbol, records) {
     ratio('P/E', r.pe, ' เท่า', 'ถูกเมื่อ < 10, แพงเมื่อ > 30',
       v => v > 0 && v < 10 ? ['good', 'ถูก'] : v > 30 ? ['warn', 'แพง'] : null) +
     ratio('P/BV', r.pbv, ' เท่า', 'ถูกเมื่อ < 1',
-      v => v > 0 && v < 1 ? ['good', 'ถูก'] : null);
+      v => v > 0 && v < 1 ? ['good', 'ถูก'] : null) +
+    // %ปันผล คิดจากเงินปันผล 12 เดือนล่าสุด เทียบ "ราคาปัจจุบัน" ไม่ใช่ราคาสิ้นไตรมาสเหมือนช่องอื่น
+    ratio('เงินปันผล', dv, '%',
+      dv === null ? 'ไม่มีการจ่ายปันผลใน 12 เดือน'
+        : `${prof.dps} บาท/หุ้น เทียบราคา ${prof.px}`,
+      v => v >= DY_GOOD ? ['good', 'ดี'] : null);
   wrap.style.display = 'block';
 }
 
@@ -794,7 +805,8 @@ async function load() {
 
     status.textContent = '';
 
-    renderProfile(symbol);
+    // ต้องรอข้อมูลบริษัทให้เสร็จก่อน เพราะการ์ดฐานะการเงินใช้ราคาล่าสุด/%ปันผลจากไฟล์นี้
+    await renderProfile(symbol);
     renderBalanceSheet(symbol, allRecords);
     renderTtmChart(symbol, allRecords, start);
     renderPivot(symbol, allRecords.filter(r => r.period_end >= start));
