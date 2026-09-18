@@ -110,7 +110,6 @@
     color: var(--muted); font-size: 11px; min-width: 15px; text-align: right;
   }
   .mover .g { color: var(--pos); font-weight: 600; }
-  .mover .g.neg { color: var(--neg); }
   .mover .px { color: var(--muted); font-size: 12px; }
   #chartBox {
     position: relative; width: 100%; height: 390px;
@@ -944,15 +943,15 @@ async function showMovers(key) {
     box.innerHTML = '';
     return;
   }
-  title.textContent = `${MOVER_LABEL[key]} (ข้อมูล ณ ${moversData.as_of})`;
+  title.textContent = `${MOVER_LABEL[key]} — ${list.length} ตัว (ข้อมูล ณ ${moversData.as_of})`;
   box.innerHTML = list.length
     ? list.map((x, i) =>
         `<button class="mover" onclick="pickMover('${esc(x.s)}')">` +
         `<span class="rank">${i + 1}</span>` +
         `<b>${esc(x.s)}</b>` +
-        `<span class="g${x.g < 0 ? ' neg' : ''}">${x.g >= 0 ? '+' : ''}${x.g.toFixed(2)}%</span>` +
+        `<span class="g">+${x.g.toFixed(2)}%</span>` +
         `<span class="px">${x.px}</span></button>`).join('')
-    : '<span style="font-size:13px;color:var(--muted);">ไม่มีข้อมูลในรอบนี้</span>';
+    : '<span style="font-size:13px;color:var(--muted);">ไม่มีหุ้นที่ราคาขึ้นในรอบนี้</span>';
 }
 
 function pickMover(symbol) {
