@@ -88,6 +88,21 @@
     background: var(--panel); border: 1px solid var(--border); color: var(--text);
     padding: 5px 10px; border-radius: 6px; font-size: 13px; cursor: pointer;
   }
+  #chartBox {
+    position: relative; width: 100%; height: 390px;
+    background: var(--panel); border-radius: 10px 10px 0 0; padding: 14px 18px 6px;
+  }
+  /* แถบลากปรับความสูงกราฟ ทำเต็มความกว้างจะได้เห็นและจับง่ายกว่ามุมเล็ก ๆ */
+  #chartResizer {
+    height: 14px; background: var(--panel); border-radius: 0 0 10px 10px;
+    cursor: ns-resize; display: flex; align-items: center; justify-content: center;
+    border-top: 1px solid var(--border); touch-action: none; user-select: none;
+  }
+  #chartResizer::before {
+    content: ''; width: 46px; height: 4px; border-radius: 2px; background: var(--border);
+  }
+  #chartResizer:hover::before, #chartResizer:focus-visible::before { background: var(--accent); }
+  #chartResizer.dragging::before { background: var(--accent); }
   .mode-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .mode-toggle button {
     background: var(--panel); border: 0; color: var(--muted);
@@ -154,9 +169,11 @@
   </div>
   <div class="wrap" id="chartWrap" style="display:none">
     <h2 class="subhead" id="chartTitle"></h2>
-    <div style="position: relative; width: 100%; height: 390px; background: var(--panel); border-radius: 10px; padding: 14px 18px 6px;">
+    <div id="chartBox">
       <canvas id="ttmChart" role="img" aria-label="กราฟเส้น EPS สะสม 4 ไตรมาสล่าสุดรายไตรมาส"></canvas>
     </div>
+    <div id="chartResizer" role="separator" aria-orientation="horizontal" tabindex="0"
+         aria-label="ลากเพื่อปรับความสูงกราฟ (หรือใช้ปุ่มลูกศรขึ้น-ลง)" title="ลากเพื่อปรับความสูงกราฟ"></div>
   </div>
   <div class="wrap"><div id="pivot"></div></div>
   <div class="wrap"><div id="result"></div></div>
@@ -834,6 +851,71 @@ async function load() {
 }
 
 document.getElementById('symbol').addEventListener('keydown', e => { if (e.key === 'Enter') load(); });
+
+// ----- ปรับความสูงกราฟด้วยการลาก -----
+const CHART_H_MIN = 200, CHART_H_MAX = 1400, CHART_H_KEY = 'fr_chart_height';
+const chartBox = document.getElementById('chartBox');
+const chartResizer = document.getElementById('chartResizer');
+
+// Chart.js ไม่ยอมปรับขนาด canvas ตาม container ที่เปลี่ยนความสูง
+// (ลอง resize(), resize(w,h), ยิง window resize, ล้าง inline style แล้ว ไม่ได้ผลสักทาง)
+// วิธีที่ได้ผลคือสร้างกราฟใหม่ ซึ่งใช้เวลาราว 6 ms เลยหน่วงด้วย rAF ให้ได้เฟรมละครั้งพอ
+// ใช้ setTimeout ไม่ใช้ requestAnimationFrame เพราะ rAF ไม่ทำงานตอนแท็บถูกซ่อน
+// (จะทำให้ความสูงที่ปรับไว้ค้างไม่ถูกวาดจนกว่าจะกลับมาที่แท็บ)
+let redrawTimer = null;
+function redrawChart() {
+  if (redrawTimer || !lastChartArgs) return;
+  redrawTimer = setTimeout(() => {
+    redrawTimer = null;
+    renderTtmChart(...lastChartArgs);
+  }, 16);
+}
+
+function setChartHeight(px, save) {
+  const h = Math.round(Math.min(CHART_H_MAX, Math.max(CHART_H_MIN, px)));
+  chartBox.style.height = h + 'px';
+  redrawChart();
+  if (save) { try { localStorage.setItem(CHART_H_KEY, h); } catch (e) {} }
+  return h;
+}
+
+// คืนค่าความสูงที่เคยตั้งไว้ (ถ้าเบราว์เซอร์บล็อก storage ก็ใช้ค่า default ไป)
+try {
+  const saved = parseInt(localStorage.getItem(CHART_H_KEY), 10);
+  if (saved) setChartHeight(saved, false);
+} catch (e) {}
+
+let dragStartY = 0, dragStartH = 0;
+chartResizer.addEventListener('pointerdown', (e) => {
+  dragStartY = e.clientY;
+  dragStartH = chartBox.getBoundingClientRect().height;
+  try { chartResizer.setPointerCapture(e.pointerId); } catch (err) {}
+  chartResizer.classList.add('dragging');
+  e.preventDefault();
+});
+chartResizer.addEventListener('pointermove', (e) => {
+  if (!chartResizer.classList.contains('dragging')) return;
+  setChartHeight(dragStartH + (e.clientY - dragStartY), false);
+});
+const endDrag = (e) => {
+  if (!chartResizer.classList.contains('dragging')) return;
+  chartResizer.classList.remove('dragging');
+  try { chartResizer.releasePointerCapture(e.pointerId); } catch (err) {}
+  setChartHeight(chartBox.getBoundingClientRect().height, true);
+};
+chartResizer.addEventListener('pointerup', endDrag);
+chartResizer.addEventListener('pointercancel', endDrag);
+
+// ปรับด้วยคีย์บอร์ดได้ด้วย เผื่อใช้เมาส์ลากไม่ถนัด
+chartResizer.addEventListener('keydown', (e) => {
+  const step = e.shiftKey ? 50 : 10;
+  if (e.key === 'ArrowDown') setChartHeight(chartBox.getBoundingClientRect().height + step, true);
+  else if (e.key === 'ArrowUp') setChartHeight(chartBox.getBoundingClientRect().height - step, true);
+  else return;
+  e.preventDefault();
+});
+// ดับเบิลคลิกที่แถบ = กลับไปความสูงเริ่มต้น
+chartResizer.addEventListener('dblclick', () => setChartHeight(390, true));
 </script>
 </body>
 </html>
