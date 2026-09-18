@@ -163,8 +163,11 @@
   <div class="note" id="note" style="display:none">
     หมายเหตุ: <span class="prelim-badge">F45</span> = ข้อมูลเบื้องต้นจากข่าว F45 (มีแค่กำไรสุทธิ/EPS ยังไม่มีรายได้/GPM เต็ม)
     &nbsp;|&nbsp; QoQ%/YoY% ของตารางล่าง คือของกำไรสุทธิ, QoQ%/YoY% ของตาราง EPS ด้านบน คือของ EPS
-    &nbsp;|&nbsp; กราฟบนสุดเลือกได้ว่าจะเทียบราคาหุ้นกับ EPS สะสม 4 ไตรมาส (TTM) หรือกับดัชนี SET
-    — ดัชนี SET มีตั้งแต่ไตรมาส 1/2559 (ก่อนไตรมาส 3/2564 เป็นราคาปิดสิ้นเดือน ไม่ใช่รายวัน) ไตรมาสก่อนหน้านั้นเส้นจะว่าง
+    &nbsp;|&nbsp; กราฟบนสุดมี 2 โหมด: <b>EPS</b> = EPS สะสม 4 ไตรมาส (TTM) เทียบราคาหุ้นรายไตรมาส,
+    <b>DAY</b> = ราคาปิดรายวัน เลือกช่วง 1/3/5/10 ปี หรือทั้งหมด และซ้อนดัชนี SET เทียบได้
+    <br>โหมด DAY: ช่วง 1–5 ปีเป็นราคาปิดรายวันครบทุกวัน ส่วนที่เก่ากว่า 5 ปี (เห็นเมื่อเลือก 10 ปี หรือ ทั้งหมด)
+    เก็บสัปดาห์ละจุดเพื่อลดขนาดไฟล์ &nbsp;|&nbsp; ดัชนี SET ที่ซ้อนเทียบเป็นรายวันตั้งแต่ ก.ย. 2564
+    ก่อนหน้านั้นเป็นค่าสิ้นเดือน
     <br>โหมดรายปี: รายได้/กำไรขั้นต้น/SG&A/กำไรสุทธิ/EPS = ผลรวมทั้งปี จะแสดงก็ต่อเมื่อมีค่าครบทุกไตรมาส
     ถ้าขาดไตรมาสใดจะขึ้น — แทน (กันยอดรวมไม่ครบแต่ดูเหมือนครบ),
     GPM%/NPM% คิดใหม่จากยอดรวม, ส่วน P/E, P/BV, ROE% เป็นค่า ณ ไตรมาสท้ายสุดของปีนั้น (ไม่ใช่ค่าเฉลี่ย)
@@ -416,26 +419,168 @@ function renderMain() {
 }
 
 let ttmChartInstance = null;
-let chartMode = 'eps';        // 'eps' = EPS สะสม vs ราคา (default) | 'set' = ดัชนี SET vs ราคา
-let setIndexByQuarter = {};   // period_end -> ค่าดัชนี SET ณ สิ้นไตรมาส
+let chartMode = 'eps';      // 'eps' = EPS สะสม vs ราคา (default) | 'day' = ราคาปิดรายวัน
+let dayRange = '1Y';        // ช่วงย้อนหลังของโหมด DAY
+let daySetOverlay = false;  // ซ้อนดัชนี SET ในโหมด DAY ไหม
+let dailyBySymbol = {};     // symbol -> {d:[YYYYMMDD], c:[close]}
+let setDaily = null;
 let lastChartArgs = null;
 
-async function loadSetIndex() {
-  if (Object.keys(setIndexByQuarter).length) return;
-  try {
-    const res = await fetch('data/set_index.json', { cache: 'no-store' });
-    if (res.ok) setIndexByQuarter = await res.json();
-  } catch (e) { /* ไม่มีดัชนีก็ยังดูโหมด EPS ได้ ไม่ต้องพังทั้งหน้า */ }
+const DAY_RANGES = { '1Y': 1, '3Y': 3, '5Y': 5, '10Y': 10, 'ALL': null };
+
+async function loadDaily(symbol) {
+  if (!dailyBySymbol[symbol]) {
+    try {
+      const res = await fetch(`data/d_${symbol}.json`, { cache: 'no-store' });
+      dailyBySymbol[symbol] = res.ok ? await res.json() : null;
+    } catch (e) { dailyBySymbol[symbol] = null; }
+  }
+  if (daySetOverlay && setDaily === null) {
+    try {
+      const res = await fetch('data/set_daily.json', { cache: 'no-store' });
+      setDaily = res.ok ? await res.json() : false;
+    } catch (e) { setDaily = false; }
+  }
 }
 
 async function setChartMode(mode) {
   chartMode = mode;
-  if (mode === 'set') await loadSetIndex();
+  if (mode === 'day' && lastChartArgs) await loadDaily(lastChartArgs[0]);
   if (lastChartArgs) renderTtmChart(...lastChartArgs);
+}
+async function setDayRange(r) {
+  dayRange = r;
+  if (lastChartArgs) renderTtmChart(...lastChartArgs);
+}
+async function toggleDaySet(on) {
+  daySetOverlay = on;
+  if (lastChartArgs) { await loadDaily(lastChartArgs[0]); renderTtmChart(...lastChartArgs); }
+}
+
+function chartModeToggle(active) {
+  return `<span class="mode-toggle" style="margin-left:10px;">` +
+    `<button class="${active === 'eps' ? 'on' : ''}" onclick="setChartMode('eps')">EPS</button>` +
+    `<button class="${active === 'day' ? 'on' : ''}" onclick="setChartMode('day')">DAY</button>` +
+    `</span>`;
+}
+
+// กราฟราคาปิดรายวัน เลือกช่วงย้อนหลังได้ และซ้อนดัชนี SET ได้
+function renderDayChart(symbol) {
+  const chartWrap = document.getElementById('chartWrap');
+  const series = dailyBySymbol[symbol];
+  const title = document.getElementById('chartTitle');
+
+  const controls = chartModeToggle('day') +
+    `<span class="mode-toggle" style="margin-left:10px;">` +
+    Object.keys(DAY_RANGES).map(r =>
+      `<button class="${dayRange === r ? 'on' : ''}" onclick="setDayRange('${r}')">${r}</button>`).join('') +
+    `</span>` +
+    `<label style="margin-left:10px; font-size:13px; color:var(--muted); font-weight:400; cursor:pointer;">` +
+    `<input type="checkbox" ${daySetOverlay ? 'checked' : ''} onchange="toggleDaySet(this.checked)"> เทียบ SET</label>`;
+
+  if (!series || !series.d || !series.d.length) {
+    title.innerHTML = `${symbol} — ไม่มีราคารายวัน` + controls;
+    chartWrap.style.display = 'block';
+    if (ttmChartInstance) { ttmChartInstance.destroy(); ttmChartInstance = null; }
+    return;
+  }
+
+  const years = DAY_RANGES[dayRange];
+  let cutoff = 0;
+  if (years) {
+    const c = new Date();
+    c.setFullYear(c.getFullYear() - years);
+    cutoff = Number(c.toISOString().slice(0, 10).replace(/-/g, ''));
+  }
+  const idx = [];
+  for (let i = 0; i < series.d.length; i++) if (series.d[i] >= cutoff) idx.push(i);
+  if (!idx.length) { chartWrap.style.display = 'none'; return; }
+
+  const fmtDate = (n) => { const s = String(n); return `${s.slice(6, 8)}/${s.slice(4, 6)}/${s.slice(0, 4)}`; };
+  const labels = idx.map(i => fmtDate(series.d[i]));
+  const prices = idx.map(i => series.c[i]);
+
+  // จับคู่ดัชนี SET กับวันเดียวกัน ถ้าวันนั้นไม่มีก็ใช้ค่าล่าสุดก่อนหน้า (ช่วงเก่าเป็นรายเดือน)
+  let setVals = null;
+  if (daySetOverlay && setDaily && setDaily.d) {
+    setVals = [];
+    let j = 0, lastVal = null;
+    for (const i of idx) {
+      while (j < setDaily.d.length && setDaily.d[j] <= series.d[i]) lastVal = setDaily.c[j++];
+      setVals.push(lastVal);
+    }
+  }
+
+  chartWrap.style.display = 'block';
+  title.innerHTML = `${symbol} — ราคาปิดรายวัน (${dayRange})` + controls;
+
+  const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
+  const priceColor = isDark ? '#ff5c5c' : '#d93838';
+  const setColor = isDark ? '#7aa2f7' : '#3b6fd4';
+  const datasets = [{
+    label: `ราคาปิด ${symbol}`, data: prices, borderColor: priceColor,
+    backgroundColor: priceColor + '1a', borderWidth: 1.6, pointRadius: 0,
+    pointHoverRadius: 4, pointHoverBackgroundColor: priceColor,
+    fill: true, tension: 0, yAxisID: 'y',
+  }];
+  if (setVals) {
+    datasets.push({
+      label: 'ดัชนี SET', data: setVals, borderColor: setColor,
+      backgroundColor: 'transparent', borderWidth: 1.6, pointRadius: 0,
+      pointHoverRadius: 4, pointHoverBackgroundColor: setColor,
+      fill: false, tension: 0, spanGaps: true, yAxisID: 'ySet',
+    });
+  }
+
+  const scales = {
+    x: {
+      grid: { display: false },
+      ticks: { color: '#9aa4b2', maxRotation: 0, autoSkip: true, maxTicksLimit: 10 }
+    },
+    y: {
+      position: 'left', grid: { color: '#2a2f3a' },
+      ticks: { color: priceColor, callback: (v) => v.toFixed(2) }
+    }
+  };
+  if (setVals) {
+    scales.ySet = {
+      position: 'right', grid: { drawOnChartArea: false },
+      ticks: { color: setColor, callback: (v) => v.toFixed(0) }
+    };
+  }
+
+  if (ttmChartInstance) ttmChartInstance.destroy();
+  ttmChartInstance = new Chart(document.getElementById('ttmChart'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: !!setVals,
+          labels: { color: '#9aa4b2', boxWidth: 12, usePointStyle: true, pointStyle: 'line' }
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ctx.parsed.y === null ? null
+              : ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) +
+                (ctx.dataset.yAxisID === 'ySet' ? ' จุด' : ' บาท')
+          }
+        }
+      },
+      scales
+    }
+  });
 }
 
 function renderTtmChart(symbol, records, start) {
   lastChartArgs = [symbol, records, start];
+  if (chartMode === 'day') {
+    // โหลดราคารายวันของหุ้นตัวนี้ก่อน (เช่นตอนเปลี่ยนหุ้นขณะค้างอยู่โหมด DAY)
+    loadDaily(symbol).then(() => { if (chartMode === 'day') renderDayChart(symbol); });
+    return;
+  }
   const chartWrap = document.getElementById('chartWrap');
   const points = [];
   for (let i = 3; i < records.length; i++) {
@@ -453,37 +598,25 @@ function renderTtmChart(symbol, records, start) {
   }
   if (!points.length) { chartWrap.style.display = 'none'; return; }
 
-  const vsSet = chartMode === 'set';
-  // โหมดเทียบ SET: ดัชนีย้อนหลังได้แค่ 5 ปี (ข้อจำกัดของ SET API) ไตรมาสก่อนหน้านั้นจะว่าง
-  if (vsSet) {
-    for (const p of points) p.setIndex = setIndexByQuarter[p.period_end] ?? null;
-  }
-
   chartWrap.style.display = 'block';
   document.getElementById('chartTitle').innerHTML =
-    `${symbol} — ${vsSet ? 'ดัชนี SET' : 'EPS สะสมย้อนหลัง 4 ไตรมาส'} เทียบกับราคาหุ้น` +
-    `<span class="mode-toggle" style="margin-left:10px;">` +
-    `<button class="${vsSet ? '' : 'on'}" onclick="setChartMode('eps')">EPS</button>` +
-    `<button class="${vsSet ? 'on' : ''}" onclick="setChartMode('set')">SET</button>` +
-    `</span>`;
+    `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส เทียบกับราคาหุ้น` + chartModeToggle('eps');
 
   const labels = points.map(p => p.quarter);
-  const values = points.map(p => vsSet ? p.setIndex : p.ttm_eps);
+  const values = points.map(p => p.ttm_eps);
   const prices = points.map(p => p.close);
   const hasPrice = prices.some(v => v !== null);
   if (ttmChartInstance) ttmChartInstance.destroy();
 
   const isDark = matchMedia('(prefers-color-scheme: dark)').matches;
-  const epsColor = isDark ? '#33c37a' : '#1f9d5f';    // EPS สะสม = เขียว
-  const setColor = isDark ? '#7aa2f7' : '#3b6fd4';    // ดัชนี SET = น้ำเงิน
-  const lineColor = vsSet ? setColor : epsColor;
+  const lineColor = isDark ? '#33c37a' : '#1f9d5f';   // EPS สะสม = เขียว
   const priceColor = isDark ? '#ff5c5c' : '#d93838';  // ราคาหุ้น = แดง
   const datasets = [{
-    label: vsSet ? 'ดัชนี SET (ปิดสิ้นไตรมาส)' : 'EPS สะสม 4 ไตรมาส',
+    label: 'EPS สะสม 4 ไตรมาส',
     data: values, borderColor: lineColor,
     backgroundColor: lineColor + '1a', borderWidth: 2, pointRadius: 0,
     pointHoverRadius: 5, pointHoverBackgroundColor: lineColor,
-    fill: !vsSet, tension: 0.15, spanGaps: true,
+    fill: true, tension: 0.15, spanGaps: true,
     yAxisID: 'y',
   }];
   if (hasPrice) {
@@ -505,7 +638,7 @@ function renderTtmChart(symbol, records, start) {
     y: {
       position: 'left',
       grid: { color: '#2a2f3a' },
-      ticks: { color: lineColor, callback: (v) => vsSet ? v.toFixed(0) : v.toFixed(2) }
+      ticks: { color: lineColor, callback: (v) => v.toFixed(2) }
     }
   };
   if (hasPrice) {
@@ -529,13 +662,9 @@ function renderTtmChart(symbol, records, start) {
         },
         tooltip: {
           callbacks: {
-            label: (ctx) => {
-              if (ctx.parsed.y === null) return null;
-              const isPrice = ctx.dataset.yAxisID === 'yPrice';
-              // ดัชนี SET มีหน่วยเป็นจุด ไม่ใช่บาท
-              if (!isPrice && vsSet) return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(2) + ' จุด';
-              return ctx.dataset.label + ': ' + ctx.parsed.y.toFixed(isPrice ? 2 : 3) + ' บาท';
-            },
+            label: (ctx) => ctx.parsed.y === null ? null
+              : ctx.dataset.label + ': ' +
+                ctx.parsed.y.toFixed(ctx.dataset.yAxisID === 'yPrice' ? 2 : 3) + ' บาท',
             // ต่อท้าย P/E และ P/BV ของไตรมาสนั้น (ครั้งเดียวต่อ tooltip ไม่ผูกกับเส้นใดเส้นหนึ่ง)
             afterBody: (items) => {
               const p = points[items[0].dataIndex];
