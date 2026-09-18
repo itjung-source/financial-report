@@ -180,7 +180,8 @@
   <div class="note" id="note" style="display:none">
     หมายเหตุ: <span class="prelim-badge">F45</span> = ข้อมูลเบื้องต้นจากข่าว F45 (มีแค่กำไรสุทธิ/EPS ยังไม่มีรายได้/GPM เต็ม)
     &nbsp;|&nbsp; QoQ%/YoY% ของตารางล่าง คือของกำไรสุทธิ, QoQ%/YoY% ของตาราง EPS ด้านบน คือของ EPS
-    &nbsp;|&nbsp; กราฟบนสุดมี 2 โหมด: <b>EPS</b> = EPS สะสม 4 ไตรมาส (TTM) เทียบราคาหุ้นรายไตรมาส,
+    &nbsp;|&nbsp; ช่วงเวลาของกราฟเลือกจากปุ่มบนหัวกราฟ (แยกจากช่อง "ตั้งแต่" ด้านบนซึ่งคุมเฉพาะตาราง)
+    &nbsp;|&nbsp; กราฟบนสุดมี 2 โหมด: <b>EPS</b> = EPS สะสม 4 ไตรมาส (TTM) เทียบราคาหุ้นรายไตรมาส เลือกช่วง 5/10 ปี หรือทั้งหมด,
     <b>DAY</b> = ราคาปิดรายวัน เลือกช่วง 1/3/5/10 ปี หรือทั้งหมด และซ้อนดัชนี SET เทียบได้
     <br>โหมด DAY: ช่วง 1–5 ปีเป็นราคาปิดรายวันครบทุกวัน ส่วนที่เก่ากว่า 5 ปี (เห็นเมื่อเลือก 10 ปี หรือ ทั้งหมด)
     เก็บสัปดาห์ละจุดเพื่อลดขนาดไฟล์ &nbsp;|&nbsp; ดัชนี SET ที่ซ้อนเทียบมีตั้งแต่ ม.ค. 2543
@@ -467,6 +468,22 @@ let setDaily = null;
 let lastChartArgs = null;
 
 const DAY_RANGES = { '1Y': 1, '3Y': 3, '5Y': 5, '10Y': 10, 'ALL': null };
+const EPS_RANGES = { '5Y': 5, '10Y': 10, 'ALL': null };
+let epsRange = '5Y';   // ช่วงย้อนหลังของกราฟโหมด EPS
+
+// วันเริ่มต้นตามช่วงที่เลือก คืน null เมื่อเลือก ALL
+function epsCutoff() {
+  const years = EPS_RANGES[epsRange];
+  if (!years) return null;
+  const d = new Date();
+  d.setFullYear(d.getFullYear() - years);
+  return d.toISOString().slice(0, 10);
+}
+
+function setEpsRange(r) {
+  epsRange = r;
+  if (lastChartArgs) renderTtmChart(...lastChartArgs);
+}
 
 async function loadDaily(symbol) {
   if (!dailyBySymbol[symbol]) {
@@ -645,9 +662,12 @@ function renderTtmChart(symbol, records, start) {
     return;
   }
   const chartWrap = document.getElementById('chartWrap');
+  // ช่วงของกราฟคุมด้วยปุ่ม 5Y/10Y/ALL เท่านั้น ไม่ผูกกับช่อง "ตั้งแต่" ด้านบน (ซึ่งคุมตาราง)
+  // ถ้าเอามาตัดกัน การกด ALL จะไม่แสดงอะไรเพิ่มเลยเมื่อช่อง "ตั้งแต่" แคบกว่า
+  const from = epsCutoff() || '0000-00-00';
   const points = [];
   for (let i = 3; i < records.length; i++) {
-    if (records[i].period_end < start) continue;
+    if (records[i].period_end < from) continue;
     const window = records.slice(i - 3, i + 1);
     const ttm = window.reduce((s, r) => s + (r.eps || 0), 0);
     points.push({
@@ -663,7 +683,12 @@ function renderTtmChart(symbol, records, start) {
 
   chartWrap.style.display = 'block';
   document.getElementById('chartTitle').innerHTML =
-    `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส เทียบกับราคาหุ้น` + chartModeToggle('eps');
+    `${symbol} — EPS สะสมย้อนหลัง 4 ไตรมาส เทียบกับราคาหุ้น (${epsRange})` +
+    chartModeToggle('eps') +
+    `<span class="mode-toggle" style="margin-left:10px;">` +
+    Object.keys(EPS_RANGES).map(r =>
+      `<button class="${epsRange === r ? 'on' : ''}" onclick="setEpsRange('${r}')">${r}</button>`).join('') +
+    `</span>`;
 
   const labels = points.map(p => p.quarter);
   const values = points.map(p => p.ttm_eps);
