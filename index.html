@@ -106,7 +106,11 @@
   }
   .mover:hover { border-color: var(--accent); }
   .mover b { font-weight: 700; }
+  .mover .rank {
+    color: var(--muted); font-size: 11px; min-width: 15px; text-align: right;
+  }
   .mover .g { color: var(--pos); font-weight: 600; }
+  .mover .g.neg { color: var(--neg); }
   .mover .px { color: var(--muted); font-size: 12px; }
   #chartBox {
     position: relative; width: 100%; height: 390px;
@@ -170,9 +174,9 @@
     <button onclick="load()">แสดงงบ</button>
     <select class="metric-select" id="moversPick" onchange="showMovers(this.value)">
       <option value="">หุ้นขึ้นแรง…</option>
-      <option value="day">top day — ขึ้น &gt;5% ใน 1 วัน</option>
-      <option value="week">top week — ขึ้น &gt;15% ใน 5 วัน</option>
-      <option value="month">top month — ขึ้น &gt;30% ใน 20 วัน</option>
+      <option value="day">top day — 1 วันทำการ</option>
+      <option value="week">top week — 5 วันทำการ</option>
+      <option value="month">top month — 20 วันทำการ</option>
     </select>
     <div style="margin-left:auto; font-size:13px; color:var(--muted);">
       เข้าสู่ระบบเป็น <strong id="whoAmI"></strong> &nbsp;·&nbsp;
@@ -910,9 +914,9 @@ async function load() {
 
 // ----- รายชื่อหุ้นขึ้นแรง -----
 const MOVER_LABEL = {
-  day: 'top day — ขึ้นมากกว่า 5% ใน 1 วันทำการ',
-  week: 'top week — ขึ้นมากกว่า 15% ใน 5 วันทำการ',
-  month: 'top month — ขึ้นมากกว่า 30% ใน 20 วันทำการ',
+  day: 'top day — หุ้นขึ้นแรงสุด 30 อันดับ ใน 1 วันทำการ',
+  week: 'top week — หุ้นขึ้นแรงสุด 30 อันดับ ใน 5 วันทำการ',
+  month: 'top month — หุ้นขึ้นแรงสุด 30 อันดับ ใน 20 วันทำการ',
 };
 let moversData = null;
 
@@ -940,13 +944,15 @@ async function showMovers(key) {
     box.innerHTML = '';
     return;
   }
-  title.textContent = `${MOVER_LABEL[key]} — พบ ${list.length} ตัว (ข้อมูล ณ ${moversData.as_of})`;
+  title.textContent = `${MOVER_LABEL[key]} (ข้อมูล ณ ${moversData.as_of})`;
   box.innerHTML = list.length
-    ? list.map(x =>
+    ? list.map((x, i) =>
         `<button class="mover" onclick="pickMover('${esc(x.s)}')">` +
-        `<b>${esc(x.s)}</b><span class="g">+${x.g.toFixed(2)}%</span>` +
+        `<span class="rank">${i + 1}</span>` +
+        `<b>${esc(x.s)}</b>` +
+        `<span class="g${x.g < 0 ? ' neg' : ''}">${x.g >= 0 ? '+' : ''}${x.g.toFixed(2)}%</span>` +
         `<span class="px">${x.px}</span></button>`).join('')
-    : '<span style="font-size:13px;color:var(--muted);">ไม่มีหุ้นเข้าเกณฑ์ในรอบนี้</span>';
+    : '<span style="font-size:13px;color:var(--muted);">ไม่มีข้อมูลในรอบนี้</span>';
 }
 
 function pickMover(symbol) {
