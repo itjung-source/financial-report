@@ -323,7 +323,27 @@ async function renderProfile(symbol) {
   wrap.style.display = 'block';
 }
 
-const DE_WARN = 2;   // D/E เกินเท่านี้ถือว่าสูง แสดงเป็นสีแดงเตือน
+const DE_WARN = 2;     // D/E เกินเท่านี้ถือว่าสูง แสดงเป็นสีแดงเตือน
+const STREAK_GOOD = 2; // EPS สะสมเพิ่มติดกันกี่ไตรมาสถึงถือว่าดี (เกณฑ์เดียวกับที่ใช้สแกนหุ้น)
+
+// นับว่า EPS สะสม 4 ไตรมาส เพิ่มขึ้นติดต่อกันมากี่ไตรมาสแล้ว (นับถอยจากไตรมาสล่าสุด)
+// ต้องมี EPS ครบทุกไตรมาสในหน้าต่างที่ใช้รวม ถ้าขาดถือว่าขาดช่วง หยุดนับ
+function ttmEpsStreak(records) {
+  const ttm = [];
+  for (let i = 3; i < records.length; i++) {
+    const w = records.slice(i - 3, i + 1);
+    const ok = w.every(r => r.eps !== null && r.eps !== undefined);
+    ttm.push({ pe: records[i].period_end, v: ok ? w.reduce((s, r) => s + r.eps, 0) : null });
+  }
+  if (ttm.length < 2 || ttm[ttm.length - 1].v === null) return null;
+
+  let streak = 0;
+  for (let i = ttm.length - 1; i > 0; i--) {
+    if (ttm[i].v === null || ttm[i - 1].v === null) break;
+    if (ttm[i].v > ttm[i - 1].v) streak++; else break;
+  }
+  return { streak, latest: ttm[ttm.length - 1], prev: ttm[ttm.length - 2] };
+}
 const DY_GOOD = 5;   // %ปันผลตั้งแต่เท่านี้ขึ้นไปถือว่าดี แสดงเป็นสีเขียว
 
 // ฐานะการเงินล่าสุด แสดงก่อนกราฟ EPS สะสม
@@ -393,8 +413,28 @@ function renderBalanceSheet(symbol, records) {
     ratio('เงินปันผล', dv, '%',
       dv === null ? 'ไม่มีการจ่ายปันผลใน 12 เดือน'
         : `${prof.dps} บาท/หุ้น ÷ ราคา ${prof.px}`,
-      v => v >= DY_GOOD ? ['good', 'ดี'] : null);
+      v => v >= DY_GOOD ? ['good', 'ดี'] : null) +
+    streakCard(records);
   wrap.style.display = 'block';
+}
+
+// การ์ดบอกว่า EPS สะสม 4 ไตรมาส เพิ่มขึ้นติดต่อกันมากี่ไตรมาสแล้ว
+function streakCard(records) {
+  const st = ttmEpsStreak(records);
+  const head = '<div class="stat-label">EPS สะสมเพิ่มติดกัน</div>';
+  if (!st) {
+    return `<div class="stat sm">${head}<div class="stat-value">—</div>` +
+      `<div class="stat-sub">ข้อมูล EPS ไม่พอคำนวณ</div></div>`;
+  }
+  const cls = st.streak >= STREAK_GOOD ? ' good' : st.streak === 0 ? ' warn' : '';
+  const tag = st.streak >= STREAK_GOOD ? '<span class="stat-good-tag">ดี</span>'
+    : st.streak === 0 ? '<span class="stat-warn-tag">ลดลง</span>' : '';
+  const sub = st.streak === 0
+    ? `ล่าสุด ${st.latest.v.toFixed(3)} ลดจาก ${st.prev.v.toFixed(3)} บาท`
+    : `ล่าสุด ${st.latest.v.toFixed(3)} บาท (ดีเมื่อ ≥ ${STREAK_GOOD} ไตรมาส)`;
+  return `<div class="stat sm${cls}">${head}` +
+    `<div class="stat-value">${st.streak} ไตรมาส${tag}</div>` +
+    `<div class="stat-sub">${sub}</div></div>`;
 }
 
 let lastMainRecords = null;
